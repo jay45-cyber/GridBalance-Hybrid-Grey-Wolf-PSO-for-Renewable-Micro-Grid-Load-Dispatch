@@ -291,9 +291,17 @@ elif section == "F. Run Optimization":
             fc1, fc2, fc3 = st.columns(3)
             with fc1:
                 st.markdown("**Exact Equality Constraints:**")
-                st.write(f"- Power Balance Identity: {'✅ SATISFIED' if np.max(d.get('power_imbalance', 0.0)) < 1e-3 else '❌ VIOLATED'} (Residual < 1e-4 kW)")
-                st.write(f"- Unserved Load: {'✅ 0.00 kWh' if d.get('unserved_load_kwh', 0.0) < 1e-3 else f'❌ {d.get(\"unserved_load_kwh\", 0.0):.2f} kWh'}")
-                st.write(f"- Excess Generation: {'✅ 0.00 kWh' if d.get('excess_generation_kwh', 0.0) < 1e-3 else f'❌ {d.get(\"excess_generation_kwh\", 0.0):.2f} kWh'}")
+                imbalance_max = float(np.max(d.get('power_imbalance', 0.0)))
+                pb_status = "✅ SATISFIED" if imbalance_max < 1e-3 else "❌ VIOLATED"
+                st.write(f"- Power Balance Identity: {pb_status} (Residual < 1e-4 kW)")
+
+                unserved = float(d.get("unserved_load_kwh", 0.0))
+                excess = float(d.get("excess_generation_kwh", 0.0))
+                unserved_status = "✅ 0.00 kWh" if unserved < 1e-3 else f"❌ {unserved:.2f} kWh"
+                excess_status = "✅ 0.00 kWh" if excess < 1e-3 else f"❌ {excess:.2f} kWh"
+
+                st.write(f"- Unserved Load: {unserved_status}")
+                st.write(f"- Excess Generation: {excess_status}")
                 st.write(f"- Initial SOC: ✅ {d.get('soc_initial', 0.5)*100:.1f}%")
             with fc2:
                 st.markdown("**Tolerance-Based Constraints:**")

@@ -50,7 +50,9 @@ GridBalance/
 │   └── reports/             # Academic Research Report and Presentation slides
 │
 ├── tests/
-│   └── test_gridbalance_suite.py # 13 automated unit and integration tests (100% pass)
+│   ├── test_gridbalance_suite.py # 28 automated unit and integration tests (100% pass)
+│   ├── test_dashboard_runtime.py # Full Streamlit runtime verification suite
+│   └── validate_end_to_end.py    # 40-run independent mathematical audit script
 │
 ├── requirements.txt         # Pinned Python package dependencies
 ├── README.md                # Project master documentation

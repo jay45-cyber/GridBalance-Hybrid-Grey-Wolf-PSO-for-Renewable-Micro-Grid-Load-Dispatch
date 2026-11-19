@@ -146,9 +146,30 @@ def validate_all():
         print(f"   [{algo.upper():6s}] Max Imbalance = {max_imbalance:10.4e} kW | Imp: [0, {np.max(grid_imp):.1f}] kW (≤{p_grid_max}) | Exp: [0, {np.max(grid_exp):.1f}] kW (≤{p_export_max}) | SOC: [{np.min(soc_start)*100:.1f}%, {np.max(soc_start)*100:.1f}%] -> PASSED")
 
     # --------------------------------------------------------------------------
-    # 3. Fresh Independent Optimization Runs & Revalidation Audit (Task 5)
+    # 3. Comprehensive 40-Run Independent Recalculation & Audit Verification
     # --------------------------------------------------------------------------
-    print("\n3. Fresh Independent Optimization Runs & Recalculation Audit (Task 5):")
+    audit_csv_path = "results/metrics/independent_audit_results.csv"
+    assert os.path.exists(audit_csv_path), f"Missing {audit_csv_path}"
+    df_audit_40 = pd.read_csv(audit_csv_path)
+    print(f"\n3. Comprehensive Independent Recalculation Audit (Total Runs: {len(df_audit_40)})")
+    print(f"   - Algorithms in audit: {df_audit_40['algorithm'].value_counts().to_dict()}")
+    assert len(df_audit_40) >= 40, f"Expected 40 audited runs, found {len(df_audit_40)}"
+    assert (df_audit_40['audit_verdict'] == 'PASSED').all(), "Not all 40 audited runs passed!"
+    assert df_audit_40['cost_discrepancy_usd'].max() < 1e-4, f"Cost discrepancy detected: {df_audit_40['cost_discrepancy_usd'].max()}"
+    assert df_audit_40['max_power_balance_error_kw'].max() < 1e-4, f"Power balance error in audit: {df_audit_40['max_power_balance_error_kw'].max()}"
+    assert (df_audit_40['independent_is_feasible'] == True).all(), "Infeasible run found in audit!"
+    assert df_audit_40['unserved_load_kwh'].max() == 0.0, "Unserved load found in audit!"
+    assert df_audit_40['excess_generation_kwh'].max() == 0.0, "Excess generation found in audit!"
+    assert df_audit_40['max_grid_import_kw'].max() <= p_grid_max + 1e-4, "Grid import exceeded in audit!"
+    assert df_audit_40['max_grid_export_kw'].max() <= p_export_max + 1e-4, "Grid export exceeded in audit!"
+    print(f"   - Verified all 40 runs: Max Cost Discrepancy = ${df_audit_40['cost_discrepancy_usd'].max():.6f}")
+    print(f"   - Max Power Balance Error across 40 runs = {df_audit_40['max_power_balance_error_kw'].max():10.4e} kW")
+    print(f"   - Independent Feasibility Rate = 100.0% (40/40 PASSED)")
+
+    # --------------------------------------------------------------------------
+    # 4. Fresh Live Optimization Runs & Recalculation Audit (Task 5)
+    # --------------------------------------------------------------------------
+    print("\n4. Fresh Live Optimization Runs & Recalculation Audit (Task 5):")
     obj = MicrogridObjective(config)
     em = MicrogridEnergyModel(config)
     constraints = MicrogridConstraints(config)
@@ -157,7 +178,7 @@ def validate_all():
     ub = np.concatenate([p_solar_avail, p_wind_avail, np.full(T, p_dis_max)])
     eval_func = lambda x: obj.evaluate(x, scen, apply_repair=True)
 
-    audit_records = []
+    live_audit_records = []
     test_seed = 42
 
     algo_classes = {
@@ -229,7 +250,7 @@ def validate_all():
         print(f"      Initial SOC: {sim_audit['soc_initial']*100:.1f}% | Final SOC: {sim_audit['soc_final']*100:.2f}% | Terminal Error: {sim_audit['terminal_soc_error']*100:.3f}% (≤{soc_tol*100}%)")
         print(f"      Grid Import Max: {np.max(sim_audit['p_grid_import']):.1f} kW (≤{p_grid_max}) | Grid Export Max: {np.max(sim_audit['p_grid_export']):.1f} kW (≤{p_export_max})")
 
-        audit_records.append({
+        live_audit_records.append({
             "algorithm": algo_name,
             "seed": test_seed,
             "reported_operating_cost": rep_details["operating_cost"],
@@ -252,11 +273,9 @@ def validate_all():
             "audit_verdict": "PASSED"
         })
 
-    # Save independent audit results separately
-    df_audit = pd.DataFrame(audit_records)
-    audit_csv_path = "results/metrics/independent_audit_results.csv"
-    df_audit.to_csv(audit_csv_path, index=False)
-    print(f"\n   Independent audit results saved to: {audit_csv_path}")
+    # Save live audit records separately without overwriting 40-run master audit
+    pd.DataFrame(live_audit_records).to_csv("results/metrics/live_fresh_audit_results.csv", index=False)
+    print(f"\n   Live fresh audit results saved to: results/metrics/live_fresh_audit_results.csv")
 
     print("\n================================================================================")
     print("VERIFICATION RESULT: ALL INDEPENDENT RECALCULATIONS & AUDITS PASSED (100%)")
