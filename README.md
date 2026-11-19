@@ -3,7 +3,7 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Dataset: DDRE-33](https://img.shields.io/badge/Dataset-DDRE--33%20(Nature%20Sci%20Data)-green.svg)](https://doi.org/10.6084/m9.figshare.29374640)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 28 Passed](https://img.shields.io/badge/tests-28%20passed-brightgreen.svg)](tests/)
+[![Tests: 33 Passed](https://img.shields.io/badge/tests-33%20passed-brightgreen.svg)](tests/)
 
 **GridBalance** is a research-grade renewable microgrid optimal economic load dispatch framework implemented in Python. It integrates authentic high-resolution distributed solar PV and wind generation scenarios from the **DDRE-33** dataset (mapped to the standard **IEEE 33-bus distribution feeder**) and introduces a synergistic **Hybrid Grey Wolf–Particle Swarm Optimization (Hybrid GWO-PSO)** dispatch algorithm.
 
@@ -61,7 +61,21 @@ GridBalance/
 
 ---
 
-## 2. Dataset Integration: DDRE-33
+## 2. Publications and Project Deliverables
+
+All research documentation, IEEE format publications, slide decks, and data archives are integrated directly into the repository:
+
+| Deliverable | Formats | Primary Locations | Description |
+| :--- | :---: | :--- | :--- |
+| **IEEE Research Paper** | `.docx`, `.tex`, `.md` | `IEEE_GridBalance_Research_Paper.docx`<br/>`results/reports/IEEE_GridBalance_Research_Paper.docx` | Publication-ready paper in IEEE 2-column format with author header block, equations, tables, embedded figures, and 15 citations. |
+| **IEEE Technical Report** | `.docx`, `.tex`, `.md` | `IEEE_GridBalance_Research_Report.docx`<br/>`results/reports/IEEE_GridBalance_Research_Report.docx` | Comprehensive 857 KB research report detailing the DDRE-33 audit, 40-run benchmark, hypothesis testing, and constraint verification. |
+| **Academic Presentation** | `.pptx`, `.md` | `results/reports/GridBalance_7_Slide_Presentation.pptx`<br/>`results/reports/GridBalance_7_Slide_Presentation.md` | 7-slide widescreen presentation deck for M.Tech thesis / conference defense. |
+| **Technical Audit & Log** | `.md` | `FINAL_TECHNICAL_AUDIT.md`<br/>`CORRECTION_LOG.md` | Exhaustive independent verification audit and chronological technical correction record. |
+| **Complete Project ZIP** | `.zip` | `GridBalance_Project.zip` | Standalone 7.7 MB archive bundling source code, datasets, figures, tests, and documentation. |
+
+---
+
+## 3. Dataset Integration: DDRE-33
 
 GridBalance uses the authentic **DDRE-33** dataset:
 - **Citation**: Chen et al., *"DDRE-33: A Large-Scale Dataset of Distributed Renewable Energy Scenarios on the IEEE-33 Bus Network"*, *Scientific Data* (Nature Portfolio), Vol. 13, Article 146, 2025.
