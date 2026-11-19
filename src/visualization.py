@@ -266,7 +266,7 @@ class MicrogridVisualizer:
         multi_algo_results: Dict[str, List[Dict[str, Any]]],
         save_name: str = "08_algorithm_cost_comparison.png"
     ):
-        """Plot 8: Boxplot / bar comparison of operating costs across runs."""
+        """Plot 8: Boxplot comparison of pure operating costs across runs."""
         fig, ax = plt.subplots(figsize=(9, 5))
         data = []
         labels = []
@@ -274,14 +274,14 @@ class MicrogridVisualizer:
 
         for algo_name, runs in multi_algo_results.items():
             labels.append(algo_name)
-            data.append([r["best_fitness"] for r in runs])
+            data.append([r["best_details"].get("operating_cost", r["best_fitness"]) for r in runs])
 
         bplot = ax.boxplot(data, tick_labels=labels, patch_artist=True, medianprops=dict(color="black", linewidth=1.5))
         for patch, color in zip(bplot["boxes"], colors[:len(labels)]):
             patch.set_facecolor(color)
             patch.set_alpha(0.7)
 
-        ax.set_title("Operating Cost Distribution Across 10 Independent Seeds")
+        ax.set_title("Operating Cost Distribution Across 10 Independent Seeds (Pure Cost)")
         ax.set_ylabel("Total Operating Cost ($)")
         ax.grid(True, linestyle="--", alpha=0.6, axis="y")
         plt.tight_layout()
@@ -297,35 +297,42 @@ class MicrogridVisualizer:
         summary_df: pd.DataFrame,
         save_name: str = "09_renewable_energy_utilization_comparison.png"
     ):
-        """Plot 9: Renewable energy utilization (%) bar chart comparison."""
-        fig, ax = plt.subplots(figsize=(8.5, 4.5))
+        """Plot 9: Standardized 4-metric renewable & grid comparison bar chart."""
+        fig, ax = plt.subplots(figsize=(10, 5))
         algos = summary_df["algorithm"].tolist()
-        re_vals = summary_df["re_utilization_pct"].tolist()
+        re_util = summary_df["re_utilization_pct"].tolist()
+        re_share = summary_df.get("re_share_pct", summary_df["re_utilization_pct"]).tolist()
         grid_deps = summary_df["grid_dependency_pct"].tolist()
+        curt_vals = summary_df.get("re_curtailment_pct", pd.Series(np.zeros(len(algos)))).tolist()
 
         x = np.arange(len(algos))
-        width = 0.35
+        width = 0.20
 
-        rects1 = ax.bar(x - width/2, re_vals, width, label="RE Utilization (%)", color="#27AE60", alpha=0.85)
-        rects2 = ax.bar(x + width/2, grid_deps, width, label="Grid Dependency (%)", color="#E67E22", alpha=0.85)
+        r1 = ax.bar(x - 1.5*width, re_util, width, label="A. RE Utilization (%)", color="#27AE60", alpha=0.85)
+        r2 = ax.bar(x - 0.5*width, re_share, width, label="B. RE Share of Demand (%)", color="#2ECC71", alpha=0.85)
+        r3 = ax.bar(x + 0.5*width, grid_deps, width, label="C. Grid Dependency (%)", color="#E67E22", alpha=0.85)
+        r4 = ax.bar(x + 1.5*width, curt_vals, width, label="D. Curtailment (%)", color="#E74C3C", alpha=0.85)
 
-        ax.set_title("Renewable Utilization & Grid Dependency Comparison")
+        ax.set_title("Standardized Renewable & Grid Integration Metrics Comparison")
         ax.set_ylabel("Percentage (%)")
         ax.set_xticks(x)
         ax.set_xticklabels(algos)
-        ax.set_ylim([0, 100])
+        ax.set_ylim([0, 105])
         ax.grid(True, linestyle="--", alpha=0.6, axis="y")
-        ax.legend(loc="upper right")
+        ax.legend(loc="upper right", framealpha=0.95)
 
-        # Add bar labels
-        for rect in rects1:
+        for rect in r1:
             h = rect.get_height()
             ax.annotate(f"{h:.1f}%", xy=(rect.get_x() + rect.get_width()/2, h),
-                        xytext=(0, 3), textcoords="offset points", ha="center", va="bottom", fontsize=9)
-        for rect in rects2:
+                        xytext=(0, 2), textcoords="offset points", ha="center", va="bottom", fontsize=8)
+        for rect in r2:
             h = rect.get_height()
             ax.annotate(f"{h:.1f}%", xy=(rect.get_x() + rect.get_width()/2, h),
-                        xytext=(0, 3), textcoords="offset points", ha="center", va="bottom", fontsize=9)
+                        xytext=(0, 2), textcoords="offset points", ha="center", va="bottom", fontsize=8)
+        for rect in r3:
+            h = rect.get_height()
+            ax.annotate(f"{h:.1f}%", xy=(rect.get_x() + rect.get_width()/2, h),
+                        xytext=(0, 2), textcoords="offset points", ha="center", va="bottom", fontsize=8)
 
         plt.tight_layout()
         path = os.path.join(self.output_dir, save_name)

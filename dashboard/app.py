@@ -2,6 +2,8 @@
 dashboard/app.py
 Interactive Streamlit Dashboard for GridBalance:
 Hybrid Grey Wolf - PSO for Renewable Microgrid Load Dispatch
+Updated with rigorous feasibility detection, separate penalty reporting,
+and standardized renewable energy metrics.
 """
 
 import os
@@ -31,7 +33,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for polished research-grade UI
+# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -51,14 +53,6 @@ st.markdown("""
         padding: 16px;
         border: 1px solid #E2E8F0;
         text-align: center;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding-top: 10px;
-        padding-bottom: 10px;
-        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -116,23 +110,23 @@ if section == "A. Project Overview":
     with col3:
         st.metric("Core Algorithm", "Hybrid GWO-PSO", "Self-Adaptive Blend")
     with col4:
-        st.metric("Target Metric", "Operating Cost ($)", "Feasibility Repair")
+        st.metric("Constraints", "Terminal SOC & Power Balance", "Feasibility Repair")
 
     st.markdown("### Architectural Schematic")
     st.info("""
     **GridBalance Architecture:**
     1. **DDRE-33 Real Scenario Ingestion**: Bus 33 Solar PV and Bus 22 Distributed Wind at 15-minute resolution across 35,040 intervals.
-    2. **Energy System Formulation**: Strict power balance, discrete BESS state transitions, TOU tariffs, and degradation costs.
+    2. **Energy System Formulation**: Strict power balance, discrete BESS state transitions, cyclic terminal SOC condition, TOU tariffs, and degradation costs.
     3. **Hybrid Optimization Engine**: GWO $\\alpha, \\beta, \\delta$ pack leadership guides global trajectory while PSO velocity updates provide rapid exploitation.
-    4. **Feasibility Repair Operator**: Enforces physical charge/discharge limits and eliminates constraint violations.
+    4. **Feasibility Repair Operator**: Enforces physical charge/discharge limits, cyclic battery balance, and eliminates constraint violations.
     """)
 
     st.markdown("### Key Scientific Contributions")
     st.markdown("""
-    - **Genuine Hybrid Formulation**: Blends GWO multi-leader encircling with PSO personal/global best velocity vectors.
+    - **Genuine Hybrid Formulation**: Blends GWO multi-leader encircling with PSO personal and global-best velocity vectors.
     - **Authentic DDRE-33 Benchmark**: Zero fabricated measurements; clearly separated from declared simulation assumptions.
     - **Multi-Algorithm Statistical Benchmarking**: Validated against standalone PSO, GWO, and Genetic Algorithm across 10 independent random seeds.
-    - **100% Feasibility Enforcement**: Dynamic state tracking guarantees zero power imbalance and zero battery SOC boundary violations.
+    - **Terminal SOC & Power Balance Integrity**: Dynamic state tracking guarantees zero unserved load, zero excess waste, and strict cyclic battery balance ($SOC_{final} \\approx SOC_{initial}$).
     """)
 
 
@@ -153,8 +147,6 @@ elif section == "B. Dataset Information":
             audit = json.load(f)
         st.success("Automated Dataset Quality Audit: PASSED (Zero Missing Values, Zero Negatives)")
         st.json(audit)
-    else:
-        st.warning("Run data preprocessing to generate data quality report.")
 
     st.markdown("### Data Dictionary & Variable Distinctions")
     dict_df = pd.DataFrame([
@@ -194,8 +186,6 @@ elif section == "C. Renewable Energy Profiles":
 # ------------------------------------------------------------------------------
 elif section == "D. Microgrid Configuration":
     st.title("D. Microgrid Physical & Economic Configuration")
-    st.markdown("All parameters are loaded from `config/system_parameters.yaml`.")
-
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Generation & Battery Specifications")
@@ -207,6 +197,7 @@ elif section == "D. Microgrid Configuration":
         st.write(f"- **BESS Max Charge/Discharge**: {config['battery']['max_charge_power_kw']} kW")
         st.write(f"- **BESS Efficiency**: {config['battery']['charge_efficiency']*100:.0f}% Charge / {config['battery']['discharge_efficiency']*100:.0f}% Discharge")
         st.write(f"- **SOC Operating Range**: {config['battery']['soc_min']*100:.0f}% – {config['battery']['soc_max']*100:.0f}%")
+        st.write(f"- **Initial / Terminal Target SOC**: {config['battery']['initial_soc']*100:.0f}%")
 
     with col2:
         st.subheader("Grid Interconnection & Tariffs")
@@ -226,24 +217,24 @@ elif section == "D. Microgrid Configuration":
 elif section == "E. Optimization Parameters":
     st.title("E. Optimization Algorithm Hyperparameters")
     p_col1, p_col2, p_col3 = st.columns(3)
-
     with p_col1:
         st.markdown("#### Particle Swarm Optimization")
         st.write("- **Inertia Weight ($w$)**: 0.9 → 0.4 (linear decay)")
         st.write("- **Cognitive Coeff ($c_1$)**: 1.8")
         st.write("- **Social Coeff ($c_2$)**: 1.8")
         st.write("- **Velocity Clamping**: 20% search width")
+        st.write("- **Selection Rule**: Deb's feasibility priority")
 
     with p_col2:
         st.markdown("#### Grey Wolf Optimizer")
         st.write("- **Exploration Factor ($a$)**: 2.0 → 0.0 (linear decay)")
         st.write("- **Leadership Pack**: Alpha, Beta, Delta")
-        st.write("- **Encircle Mechanism**: Stochastic $A, C$ vectors")
+        st.write("- **Selection Rule**: Deb's feasibility priority")
 
     with p_col3:
         st.markdown("#### Hybrid GWO-PSO")
         st.write("- **Exploration Blend ($\\lambda$)**: 0.80 → 0.20")
-        st.write("- **Velocity Guidance**: Combined $pbest$ & GWO leader")
+        st.write("- **Velocity Guidance**: $pbest$ & Global Best Alpha")
         st.write("- **Inertia Weight**: 0.9 → 0.4")
         st.write("- **Feasibility Repair**: Enforced every iteration")
 
@@ -253,8 +244,6 @@ elif section == "E. Optimization Parameters":
 # ------------------------------------------------------------------------------
 elif section == "F. Run Optimization":
     st.title("F. Interactive Dispatch Optimization Execution")
-    st.markdown("Select an algorithm and run live dispatch optimization on the authentic DDRE-33 scenario.")
-
     algo_choice = st.selectbox(
         "Choose Optimization Algorithm",
         ["Hybrid GWO-PSO", "PSO", "GWO", "Genetic Algorithm (GA)"]
@@ -291,11 +280,25 @@ elif section == "F. Run Optimization":
         d = res["best_details"]
         scen = st.session_state["last_run_scen"]
 
+        # Feasibility Banner
+        if d["is_feasible"]:
+            st.success("✅ **Dispatch Solution Status: STRICTLY FEASIBLE** (Zero unserved load, zero excess waste, terminal SOC satisfied)")
+        else:
+            st.error("⚠️ **Dispatch Solution Status: INFEASIBLE** (Constraint violations detected)")
+
+        # Metrics row 1: Economic Costs
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Pure Operating Cost", f"${d['operating_cost']:.2f}")
+        c2.metric("Constraint Penalties", f"${d['total_penalty']:.2f}")
+        c3.metric("Terminal SOC Error", f"{d['terminal_soc_error']*100:.2f}%")
+        c4.metric("Total Fitness", f"${res['best_fitness']:.2f}")
+
+        # Metrics row 2: Standardized Renewable Metrics
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Operating Cost", f"${res['best_fitness']:.2f}")
-        m2.metric("RE Utilization", f"{d['re_utilization_pct']:.2f}%")
-        m3.metric("Grid Dependency", f"{d['grid_dependency_pct']:.2f}%")
-        m4.metric("Feasibility", "FEASIBLE" if d["is_feasible"] else "INFEASIBLE")
+        m1.metric("A. Renewable Utilization", f"{d['re_utilization_pct']:.2f}%")
+        m2.metric("B. RE Share of Demand", f"{d['re_share_pct']:.2f}%")
+        m3.metric("C. Grid Dependency", f"{d['grid_dependency_pct']:.2f}%")
+        m4.metric("D. RE Curtailment", f"{d['re_curtailment_pct']:.2f}%")
 
         # Convergence plot
         fig_conv = px.line(
@@ -317,23 +320,22 @@ elif section == "G. Algorithm Comparison":
     summary_path = "results/metrics/algorithm_comparison_summary.csv"
     if os.path.exists(summary_path):
         df_sum = pd.read_csv(summary_path)
-        st.dataframe(df_sum.style.highlight_min(subset=["mean_cost_usd", "best_cost_usd"], color="#D4EDDA"))
+        cost_col = "mean_operating_cost_usd" if "mean_operating_cost_usd" in df_sum.columns else df_sum.columns[2]
+        st.dataframe(df_sum.style.highlight_min(subset=[cost_col], color="#D4EDDA"))
 
         fig_bar = px.bar(
             df_sum,
             x="algorithm",
-            y="mean_cost_usd",
-            error_y="std_cost_usd",
+            y=cost_col,
+            error_y="std_operating_cost_usd" if "std_operating_cost_usd" in df_sum.columns else None,
             color="algorithm",
-            title="Mean Operating Cost Comparison with Standard Deviation Error Bars ($)",
-            labels={"mean_cost_usd": "Mean Cost ($)", "algorithm": "Algorithm"}
+            title="Mean Pure Operating Cost Comparison with Standard Deviation Error Bars ($)",
+            labels={cost_col: "Mean Operating Cost ($)", "algorithm": "Algorithm"}
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
         if os.path.exists("results/graphs/08_algorithm_cost_comparison.png"):
             st.image("results/graphs/08_algorithm_cost_comparison.png", caption="Cost Distribution Boxplot Across 10 Independent Seeds")
-    else:
-        st.warning("Run experiments/compare_algorithms.py to generate comparative metrics.")
 
 
 # ------------------------------------------------------------------------------
@@ -395,7 +397,7 @@ elif section == "J. Performance Metrics":
         )
 
     if os.path.exists("results/graphs/09_renewable_energy_utilization_comparison.png"):
-        st.image("results/graphs/09_renewable_energy_utilization_comparison.png", caption="Renewable Utilization vs Grid Dependency")
+        st.image("results/graphs/09_renewable_energy_utilization_comparison.png", caption="Standardized Renewable & Grid Integration Metrics Comparison")
 
     if os.path.exists("results/graphs/10_battery_soc_profile.png"):
-        st.image("results/graphs/10_battery_soc_profile.png", caption="BESS State of Charge (SOC) Dynamics")
+        st.image("results/graphs/10_battery_soc_profile.png", caption="BESS State of Charge (SOC) Dynamics & Cyclic Balance")

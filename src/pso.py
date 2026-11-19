@@ -1,7 +1,7 @@
 """
 src/pso.py
 Standalone Particle Swarm Optimization (PSO) implemented from scratch
-for renewable microgrid load dispatch.
+for renewable microgrid load dispatch with Deb's feasibility rules.
 """
 
 import time
@@ -13,10 +13,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def is_better(res_new: Dict[str, Any], res_curr: Dict[str, Any]) -> bool:
+    """Deb's feasibility rule for comparing two candidate solutions."""
+    if not res_curr:
+        return True
+    feas_new = res_new.get("is_feasible", False)
+    feas_curr = res_curr.get("is_feasible", False)
+
+    if feas_new and not feas_curr:
+        return True
+    elif not feas_new and feas_curr:
+        return False
+    elif feas_new and feas_curr:
+        return res_new["operating_cost"] < res_curr["operating_cost"]
+    else:
+        return res_new["fitness"] < res_curr["fitness"]
+
+
 class ParticleSwarmOptimizer:
     """
     Standard Particle Swarm Optimizer with dynamic inertia weight,
-    velocity clamping, boundary repair, and convergence tracking.
+    velocity clamping, boundary repair, and Deb's feasibility rules.
     """
 
     def __init__(
@@ -51,7 +68,7 @@ class ParticleSwarmOptimizer:
         self.positions = np.zeros((self.pop_size, self.dim), dtype=np.float64)
         self.velocities = np.zeros((self.pop_size, self.dim), dtype=np.float64)
         self.pbest_positions = np.zeros((self.pop_size, self.dim), dtype=np.float64)
-        self.pbest_fitness = np.full(self.pop_size, np.inf, dtype=np.float64)
+        self.pbest_details: List[Dict[str, Any]] = [{} for _ in range(self.pop_size)]
         self.gbest_position = np.zeros(self.dim, dtype=np.float64)
         self.gbest_fitness = np.inf
         self.gbest_details: Dict[str, Any] = {}
@@ -59,17 +76,16 @@ class ParticleSwarmOptimizer:
         self.execution_time: float = 0.0
 
     def initialize_population(self):
-        """Initializes particle positions uniformly within bounds and velocities to zero or small random."""
+        """Initializes particle positions uniformly within bounds and velocities to random."""
         for i in range(self.pop_size):
             self.positions[i] = self.lb + self.rng.random(self.dim) * (self.ub - self.lb)
             self.velocities[i] = (self.rng.random(self.dim) - 0.5) * 2.0 * self.v_max
             eval_res = self.objective_evaluator(self.positions[i])
-            fit = eval_res["fitness"]
             self.pbest_positions[i] = self.positions[i].copy()
-            self.pbest_fitness[i] = fit
+            self.pbest_details[i] = eval_res
 
-            if fit < self.gbest_fitness:
-                self.gbest_fitness = fit
+            if is_better(eval_res, self.gbest_details):
+                self.gbest_fitness = eval_res["fitness"]
                 self.gbest_position = self.positions[i].copy()
                 self.gbest_details = eval_res
 
@@ -80,7 +96,7 @@ class ParticleSwarmOptimizer:
         """
         start_time = time.perf_counter()
         self.initialize_population()
-        self.convergence_curve = [self.gbest_fitness]
+        self.convergence_curve = [self.gbest_details.get("operating_cost", self.gbest_fitness)]
 
         for it in range(1, self.max_iter + 1):
             # Linearly decreasing inertia weight
@@ -106,30 +122,31 @@ class ParticleSwarmOptimizer:
 
                 # Fitness evaluation
                 eval_res = self.objective_evaluator(self.positions[i])
-                fit = eval_res["fitness"]
 
                 # Update personal best
-                if fit < self.pbest_fitness[i]:
-                    self.pbest_fitness[i] = fit
+                if is_better(eval_res, self.pbest_details[i]):
+                    self.pbest_details[i] = eval_res
                     self.pbest_positions[i] = self.positions[i].copy()
 
                     # Update global best
-                    if fit < self.gbest_fitness:
-                        self.gbest_fitness = fit
+                    if is_better(eval_res, self.gbest_details):
+                        self.gbest_fitness = eval_res["fitness"]
                         self.gbest_position = self.positions[i].copy()
                         self.gbest_details = eval_res
 
-            self.convergence_curve.append(self.gbest_fitness)
+            best_val = self.gbest_details.get("operating_cost", self.gbest_fitness)
+            self.convergence_curve.append(best_val)
 
         self.execution_time = time.perf_counter() - start_time
         logger.info(
             f"PSO completed in {self.execution_time:.3f}s. "
-            f"Best Fitness: ${self.gbest_fitness:.2f}"
+            f"Best Cost: ${self.gbest_details.get('operating_cost', self.gbest_fitness):.2f}"
         )
 
         return {
             "algorithm": "PSO",
             "best_fitness": self.gbest_fitness,
+            "best_operating_cost": self.gbest_details.get("operating_cost", self.gbest_fitness),
             "best_position": self.gbest_position,
             "best_details": self.gbest_details,
             "convergence_curve": self.convergence_curve,

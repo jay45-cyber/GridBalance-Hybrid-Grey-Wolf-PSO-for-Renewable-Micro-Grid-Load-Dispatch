@@ -56,7 +56,7 @@ $$\min \quad C_{total} = \sum_{t=1}^{T} \left( C_{solar}(t) + C_{wind}(t) + C_{b
 ### Slide 5: Battery Energy Storage & Physical Constraints
 ## BESS State Dynamics & Power Balance
 * **Power Balance Equality Constraint**:
-  $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid}(t) = P_{load}(t), \quad \forall t$$
+  $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid}(t) + P_{unserved}(t) - P_{excess}(t) = P_{load}(t), \quad \forall t$$
 * **Discrete Battery State-of-Charge (SOC) Dynamics**:
   $$\text{SOC}(t) = \text{SOC}(t-1)(1 - \sigma_{sd}\Delta t) - \frac{P_{battery}(t)\Delta t}{E_{bat}} \cdot \begin{cases} \frac{1}{\eta_{dis}}, & P_{battery}(t) \ge 0 \text{ (discharging)} \\ \eta_{ch}, & P_{battery}(t) < 0 \text{ (charging)} \end{cases}$$
 * **Operating Boundaries**:
@@ -64,6 +64,9 @@ $$\min \quad C_{total} = \sum_{t=1}^{T} \left( C_{solar}(t) + C_{wind}(t) + C_{b
   - Charge / Discharge Efficiencies: $\eta_{ch} = 95\%, \quad \eta_{dis} = 95\%$
   - Allowable Range: $20\% \le \text{SOC}(t) \le 90\%$
   - Maximum Power Limit: $P_{ch, max} = P_{dis, max} = 600\text{ kW}$ (0.3C rate)
+* **Cyclic Terminal SOC Constraint**:
+  - Enforced $|\text{SOC}(T) - \text{SOC}_{init}| \le 0.01$ (tolerance 1%)
+  - Eliminates artificial depletion of stored energy without accounting for terminal value.
 
 ---
 
@@ -89,41 +92,50 @@ $$\min \quad C_{total} = \sum_{t=1}^{T} \left( C_{solar}(t) + C_{wind}(t) + C_{b
 * **Step 3: Adaptive Time-Varying Blending**:
   $$\vec{X}_i(k+1) = \lambda(k) \vec{X}_{GWO, i} + (1 - \lambda(k)) (\vec{X}_i + \vec{V}_i(k+1))$$
   - $\lambda(k) = 0.80 \to 0.20$: Early iterations prioritize GWO multi-leader exploration; late iterations transition to PSO velocity exploitation.
+* **Step 4: Deb's Feasibility Comparison Rules**: Candidates are compared based on constraint feasibility first, eliminating penalized bias.
 
 ---
 
 ### Slide 8: Feasibility Repair Operator
 ## Ensuring 100% Physical Feasibility
-* **The Feasibility Challenge**: Standard random perturbation in metaheuristics generates solutions violating SOC limits or power balance.
+* **The Feasibility Challenge**: Standard random perturbation generates solutions violating terminal SOC or grid limits.
 * **Deterministic Feasibility Repair $\mathcal{R}(\vec{X})$**:
   1. Clamps renewable output strictly to instantaneous resource limits: $0 \le P_{solar} \le P_{solar, avail}$.
-  2. Evaluates chronological SOC transitions step-by-step. Discharging is capped by usable energy above $SOC_{min}$; charging is capped by headroom below $SOC_{max}$.
-  3. Computes exact substation grid power required to eliminate imbalance: $P_{grid} = P_{load} - P_{solar} - P_{wind} - P_{battery}$.
-* **Result**: **100.0% Feasibility Rate** achieved across all algorithms and all 40 experimental runs.
+  2. Chronological SOC evaluation respects dynamic charging headroom and discharge energy limits.
+  3. Iterative balancing scales battery throughput to ensure $|\text{SOC}(T) - \text{SOC}_{init}| \le 0.01$.
+  4. Caps substation grid power at physical limits ($P_{grid, max} = 2,500\text{ kW}$) and explicitly computes $P_{unserved}$ and $P_{excess}$.
+* **Result**: **100.0% Feasibility Rate** achieved across all algorithms and all 40 experimental runs ($P_{unserved} = 0.00\text{ kWh}$).
 
 ---
 
 ### Slide 9: Experimental Benchmarking
 ## Statistical Results Across 10 Independent Seeds (40 Runs)
-All algorithms evaluated with $N=30$, $K=100$ on identical Scenario Day 15:
+All algorithms evaluated with $N=30$, $K=100$ on identical Scenario Day 15 (Pure Operating Cost):
 
 | Algorithm | Best Cost (\$) | Mean Cost (\$) | Std Dev (\$) | Worst Cost (\$) | Runtime | Feasibility |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **GA** | \$3,068.12 | \$3,078.11 | \$6.41 | \$3,088.63 | 1.79s | **100.0%** |
-| **Hybrid GWO-PSO** | **\$3,098.41** | **\$3,163.36** | **\$51.84** | **\$3,288.44** | **1.84s** | **100.0%** |
-| **PSO** | \$3,056.75 | \$3,160.29 | \$74.86 | \$3,312.69 | 1.78s | **100.0%** |
-| **GWO** | \$3,166.66 | \$3,215.69 | \$33.03 | \$3,290.27 | 1.74s | **100.0%** |
+| **PSO** | **\$3,114.81** | \$3,197.39 | \$82.47 | \$3,386.76 | 3.65s | **100.0%** |
+| **Hybrid GWO-PSO** | \$3,215.63 | **\$3,256.51** | **\$45.09** | **\$3,377.57** | **3.41s** | **100.0%** |
+| **GA** | \$3,215.79 | \$3,269.52 | \$35.33 | \$3,340.97 | 3.36s | **100.0%** |
+| **GWO** | \$3,271.60 | \$3,354.19 | \$70.41 | \$3,510.54 | 3.38s | **100.0%** |
 
-* **Key Takeaway**: Hybrid GWO-PSO reduces variance significantly relative to PSO ($\sigma = \$51.84$ vs $\$74.86$) and achieves a better worst-case performance (\$3,288.44 vs \$3,312.69).
+* **Statistical Significance**:
+  - Hybrid vs GWO: Welch $t = -3.505$ ($p = 0.0031$), Mann-Whitney $U = 9.0$ ($p = 0.0022$). Hybrid significantly outperforms GWO ($p < 0.01$).
+  - Hybrid vs PSO: PSO achieves a lower mean but exhibits nearly double the variance ($\sigma = \$82.47$ vs $\$45.09$ for Hybrid) and higher worst cost (\$3,386.76 vs \$3,377.57).
 
 ---
 
-### Slide 10: 24-Hour Energy Dispatch Results
-## Optimal Generation Stack & Battery Dynamics
-* **Peak Solar Absorption**: Peak solar generation ($673\text{ kW}$) occurs at 12:00–14:00. The battery charges at max rate ($600\text{ kW}$) to prevent export at low feed-in tariffs.
-* **On-Peak Price Arbitrage**: During peak tariff hours (14:00–20:00, $\$0.24/\text{kWh}$), the battery discharges continuously, reducing expensive grid import by $550–600\text{ kW}$.
-* **Zero Curtailment**: Achieved $0.00\text{ kWh}$ renewable curtailment across the entire 24-hour horizon.
-* **RE Utilization**: $21.30\%$ of total microgrid energy demand supplied directly by local Solar PV and Wind.
+### Slide 10: Standardized Clean Energy Metrics
+## Accurate 4-Metric Evaluation (Zero Double-Counting)
+* **Metric A (RE Utilization)**:
+  - Hybrid GWO-PSO captures **92.26%** of available solar and wind resources.
+* **Metric B (RE Share of Demand)**:
+  - Clean renewable energy directly satisfies **21.60%** of customer load demand.
+* **Metric C (Grid Dependency)**:
+  - Substation grid import meets **78.95%** of energy requirements.
+* **Metric D (RE Curtailment)**:
+  - Curtailment is kept down to **7.74%** ($513.67\text{ kWh}$).
+* **Battery Energy Integrity**: Battery discharge is tracked separately and not double-counted as newly generated renewable energy.
 
 ---
 

@@ -46,17 +46,23 @@ def run(day_index: int = 15, seed: int = 42, pop_size: int = 30, max_iter: int =
 
     d = result["best_details"]
     print("\n--- PSO Optimal Dispatch Results ---")
-    print(f"Total Operating Cost: ${result['best_fitness']:.2f}")
-    print(f"  - Grid Energy Cost: ${d['c_grid']:.2f}")
-    print(f"  - Solar O&M Cost:   ${d['c_solar']:.2f}")
-    print(f"  - Wind O&M Cost:    ${d['c_wind']:.2f}")
-    print(f"  - Battery Deg Cost: ${d['c_battery']:.2f}")
-    print(f"  - Curtailment Cost: ${d['c_curtailment']:.2f}")
-    print(f"  - Carbon Tax Cost:  ${d['c_carbon']:.2f}")
-    print(f"Renewable Utilization: {d['re_utilization_pct']:.2f}%")
-    print(f"Grid Dependency:       {d['grid_dependency_pct']:.2f}%")
-    print(f"Feasibility Status:    {'FEASIBLE' if d['is_feasible'] else 'INFEASIBLE'}")
-    print(f"Execution Time:        {result['execution_time']:.3f} seconds")
+    print(f"Pure Operating Cost:   ${d['operating_cost']:.2f}")
+    print(f"Constraint Penalties:  ${d['total_penalty']:.2f}")
+    print(f"Total Fitness:         ${result['best_fitness']:.2f}")
+    print(f"  - Grid Energy Cost:  ${d['c_grid']:.2f}")
+    print(f"  - Solar O&M Cost:    ${d['c_solar']:.2f}")
+    print(f"  - Wind O&M Cost:     ${d['c_wind']:.2f}")
+    print(f"  - Battery Deg Cost:  ${d['c_battery']:.2f}")
+    print(f"  - Curtailment Cost:  ${d['c_curtailment']:.2f}")
+    print(f"  - Carbon Tax Cost:   ${d['c_carbon']:.2f}")
+    print(f"Terminal SOC:          Initial = {d['soc_initial']*100:.1f}%, Final = {d['soc_final']*100:.1f}%, Error = {d['terminal_soc_error']*100:.2f}% (Violated: {d['terminal_soc_violated']})")
+    print(f"Power Balance Imbalance: {np.max(d['power_imbalance']):.4f} kW (Unserved: {d['unserved_load_kwh']:.2f} kWh, Excess: {d['excess_generation_kwh']:.2f} kWh)")
+    print(f"A. Renewable Utilization: {d['re_utilization_pct']:.2f}%")
+    print(f"B. Renewable Share:       {d['re_share_pct']:.2f}%")
+    print(f"C. Grid Dependency:       {d['grid_dependency_pct']:.2f}%")
+    print(f"D. Renewable Curtailment: {d['re_curtailment_pct']:.2f}%")
+    print(f"Feasibility Status:       {'FEASIBLE' if d['is_feasible'] else 'INFEASIBLE'}")
+    print(f"Execution Time:           {result['execution_time']:.3f} seconds")
 
     # Save dispatch schedule CSV
     df_dispatch = pd.DataFrame({
@@ -64,7 +70,12 @@ def run(day_index: int = 15, seed: int = 42, pop_size: int = 30, max_iter: int =
         "solar_dispatched_kw": d["p_solar"],
         "wind_dispatched_kw": d["p_wind"],
         "battery_net_kw": d["p_battery"],
-        "grid_import_kw": d["p_grid"],
+        "battery_discharge_kw": d["p_battery_discharge"],
+        "battery_charge_kw": d["p_battery_charge"],
+        "grid_import_kw": d["p_grid_import"],
+        "grid_export_kw": d["p_grid_export"],
+        "unserved_load_kw": d["unserved_load_kwh"],
+        "excess_generation_kw": d["excess_generation_kwh"],
         "soc_start": d["soc_trajectory"][:-1],
         "load_demand_kw": scen["load_demand_kw"]
     })

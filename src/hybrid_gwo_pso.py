@@ -2,7 +2,8 @@
 src/hybrid_gwo_pso.py
 Hybrid Grey Wolf - Particle Swarm Optimization (Hybrid GWO-PSO)
 for Renewable Microgrid Load Dispatch.
-Integrates GWO multi-leader exploration with PSO velocity exploitation.
+Integrates GWO multi-leader exploration with PSO velocity exploitation
+and Deb's feasibility rules for robust constraint satisfaction.
 """
 
 import time
@@ -12,6 +13,28 @@ import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def is_better(res_new: Dict[str, Any], res_curr: Dict[str, Any]) -> bool:
+    """
+    Deb's feasibility rule for comparing two candidate solutions:
+    1. Feasible is strictly preferred over infeasible.
+    2. Between two feasible solutions, lower operating cost wins.
+    3. Between two infeasible solutions, lower penalty / fitness wins.
+    """
+    if not res_curr:
+        return True
+    feas_new = res_new.get("is_feasible", False)
+    feas_curr = res_curr.get("is_feasible", False)
+
+    if feas_new and not feas_curr:
+        return True
+    elif not feas_new and feas_curr:
+        return False
+    elif feas_new and feas_curr:
+        return res_new["operating_cost"] < res_curr["operating_cost"]
+    else:
+        return res_new["fitness"] < res_curr["fitness"]
 
 
 class HybridGWOPSO:
@@ -53,7 +76,7 @@ class HybridGWOPSO:
         self.seed = seed
         self.rng = np.random.default_rng(seed)
 
-        # GWO hierarchy
+        # GWO hierarchy (Alpha = 1st, Beta = 2nd, Delta = 3rd)
         self.alpha_pos = np.zeros(self.dim, dtype=np.float64)
         self.alpha_score = np.inf
         self.alpha_details: Dict[str, Any] = {}
@@ -70,49 +93,51 @@ class HybridGWOPSO:
         self.positions = np.zeros((self.pop_size, self.dim), dtype=np.float64)
         self.velocities = np.zeros((self.pop_size, self.dim), dtype=np.float64)
         self.pbest_positions = np.zeros((self.pop_size, self.dim), dtype=np.float64)
-        self.pbest_fitness = np.full(self.pop_size, np.inf, dtype=np.float64)
+        self.pbest_details: List[Dict[str, Any]] = [{} for _ in range(self.pop_size)]
 
         self.convergence_curve: List[float] = []
         self.execution_time: float = 0.0
 
+    def _update_hierarchy(self, pos: np.ndarray, res: Dict[str, Any]):
+        """Updates pack leadership Alpha, Beta, Delta according to Deb's rules."""
+        if is_better(res, self.alpha_details):
+            self.delta_details = self.beta_details
+            self.delta_pos = self.beta_pos.copy()
+            self.delta_score = self.beta_score
+
+            self.beta_details = self.alpha_details
+            self.beta_pos = self.alpha_pos.copy()
+            self.beta_score = self.alpha_score
+
+            self.alpha_details = res
+            self.alpha_pos = pos.copy()
+            self.alpha_score = res["fitness"]
+
+        elif is_better(res, self.beta_details):
+            self.delta_details = self.beta_details
+            self.delta_pos = self.beta_pos.copy()
+            self.delta_score = self.beta_score
+
+            self.beta_details = res
+            self.beta_pos = pos.copy()
+            self.beta_score = res["fitness"]
+
+        elif is_better(res, self.delta_details):
+            self.delta_details = res
+            self.delta_pos = pos.copy()
+            self.delta_score = res["fitness"]
+
     def initialize_population(self):
-        """Initializes hybrid population, assigns pbest, and determines initial Alpha, Beta, Delta."""
+        """Initializes population uniformly, evaluates candidates, and sets initial leaders."""
         for i in range(self.pop_size):
             self.positions[i] = self.lb + self.rng.random(self.dim) * (self.ub - self.lb)
             self.velocities[i] = (self.rng.random(self.dim) - 0.5) * 2.0 * self.v_max
             eval_res = self.objective_evaluator(self.positions[i])
-            fit = eval_res["fitness"]
 
             self.pbest_positions[i] = self.positions[i].copy()
-            self.pbest_fitness[i] = fit
+            self.pbest_details[i] = eval_res
 
-            # Update GWO pack hierarchy
-            if fit < self.alpha_score:
-                self.delta_score = self.beta_score
-                self.delta_pos = self.beta_pos.copy()
-                self.delta_details = self.beta_details
-
-                self.beta_score = self.alpha_score
-                self.beta_pos = self.alpha_pos.copy()
-                self.beta_details = self.alpha_details
-
-                self.alpha_score = fit
-                self.alpha_pos = self.positions[i].copy()
-                self.alpha_details = eval_res
-
-            elif fit < self.beta_score:
-                self.delta_score = self.beta_score
-                self.delta_pos = self.beta_pos.copy()
-                self.delta_details = self.beta_details
-
-                self.beta_score = fit
-                self.beta_pos = self.positions[i].copy()
-                self.beta_details = eval_res
-
-            elif fit < self.delta_score:
-                self.delta_score = fit
-                self.delta_pos = self.positions[i].copy()
-                self.delta_details = eval_res
+            self._update_hierarchy(self.positions[i], eval_res)
 
     def optimize(self) -> Dict[str, Any]:
         """
@@ -121,7 +146,7 @@ class HybridGWOPSO:
         """
         start_time = time.perf_counter()
         self.initialize_population()
-        self.convergence_curve = [self.alpha_score]
+        self.convergence_curve = [self.alpha_details.get("operating_cost", self.alpha_score)]
 
         for it in range(1, self.max_iter + 1):
             # Dynamic coefficients
@@ -157,11 +182,11 @@ class HybridGWOPSO:
 
                 x_gwo = (X1 + X2 + X3) / 3.0
 
-                # 2. PSO Velocity Vector guided by Personal Best and GWO Target
+                # 2. PSO Velocity Vector guided by Personal Best and Global Best Alpha
                 r1_p = self.rng.random(self.dim)
                 r2_p = self.rng.random(self.dim)
                 cog_vel = self.c1 * r1_p * (self.pbest_positions[i] - self.positions[i])
-                soc_vel = self.c2 * r2_p * (x_gwo - self.positions[i])
+                soc_vel = self.c2 * r2_p * (self.alpha_pos - self.positions[i])
                 self.velocities[i] = w * self.velocities[i] + cog_vel + soc_vel
                 self.velocities[i] = np.clip(self.velocities[i], -self.v_max, self.v_max)
 
@@ -175,52 +200,28 @@ class HybridGWOPSO:
 
                 # 4. Evaluation
                 eval_res = self.objective_evaluator(self.positions[i])
-                fit = eval_res["fitness"]
 
                 # Update Personal Best
-                if fit < self.pbest_fitness[i]:
-                    self.pbest_fitness[i] = fit
+                if is_better(eval_res, self.pbest_details[i]):
+                    self.pbest_details[i] = eval_res
                     self.pbest_positions[i] = self.positions[i].copy()
 
                 # Update Pack Hierarchy (Alpha, Beta, Delta)
-                if fit < self.alpha_score:
-                    self.delta_score = self.beta_score
-                    self.delta_pos = self.beta_pos.copy()
-                    self.delta_details = self.beta_details
+                self._update_hierarchy(self.positions[i], eval_res)
 
-                    self.beta_score = self.alpha_score
-                    self.beta_pos = self.alpha_pos.copy()
-                    self.beta_details = self.alpha_details
-
-                    self.alpha_score = fit
-                    self.alpha_pos = self.positions[i].copy()
-                    self.alpha_details = eval_res
-
-                elif fit < self.beta_score:
-                    self.delta_score = self.beta_score
-                    self.delta_pos = self.beta_pos.copy()
-                    self.delta_details = self.beta_details
-
-                    self.beta_score = fit
-                    self.beta_pos = self.positions[i].copy()
-                    self.beta_details = eval_res
-
-                elif fit < self.delta_score:
-                    self.delta_score = fit
-                    self.delta_pos = self.positions[i].copy()
-                    self.delta_details = eval_res
-
-            self.convergence_curve.append(self.alpha_score)
+            best_val = self.alpha_details.get("operating_cost", self.alpha_score)
+            self.convergence_curve.append(best_val)
 
         self.execution_time = time.perf_counter() - start_time
         logger.info(
             f"Hybrid GWO-PSO completed in {self.execution_time:.3f}s. "
-            f"Alpha Best Fitness: ${self.alpha_score:.2f}"
+            f"Alpha Cost: ${self.alpha_details.get('operating_cost', self.alpha_score):.2f}"
         )
 
         return {
             "algorithm": "Hybrid GWO-PSO",
             "best_fitness": self.alpha_score,
+            "best_operating_cost": self.alpha_details.get("operating_cost", self.alpha_score),
             "best_position": self.alpha_pos,
             "best_details": self.alpha_details,
             "convergence_curve": self.convergence_curve,

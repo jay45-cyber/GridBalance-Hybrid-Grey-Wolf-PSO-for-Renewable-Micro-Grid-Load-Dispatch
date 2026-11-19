@@ -1,7 +1,8 @@
 """
 experiments/compare_algorithms.py
 Multi-seed benchmark comparing PSO, GWO, Hybrid GWO-PSO, and GA
-under identical problem formulations and evaluation budgets.
+under identical problem formulations, feasibility rules, and evaluation budgets.
+Includes statistical significance testing (Welch's t-test and Wilcoxon/Mann-Whitney).
 """
 
 import os
@@ -12,6 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 from typing import Dict, List, Any, Tuple
 
 from src.data_loader import DataLoader
@@ -69,19 +71,37 @@ def run_benchmark(
             res = opt.optimize()
             res["seed"] = seed
             multi_algo_results[algo_name].append(res)
-            print(f"  Run {run_idx+1:02d}/{len(seeds)} (Seed {seed}): Best Cost = ${res['best_fitness']:.2f} | Time = {res['execution_time']:.2f}s")
+            op_cost = res["best_details"].get("operating_cost", res["best_fitness"])
+            pen = res["best_details"].get("total_penalty", 0.0)
+            term_err = res["best_details"].get("terminal_soc_error", 0.0)
+            feas = res["best_details"].get("is_feasible", False)
+            print(f"  Run {run_idx+1:02d}/{len(seeds)} (Seed {seed}): OpCost = ${op_cost:.2f} | Pen = ${pen:.2f} | TermErr = {term_err:.4f} | Feas = {feas} | Time = {res['execution_time']:.2f}s")
 
     # Evaluation & Statistical Metrics
     evaluator = ExperimentEvaluator(metrics_dir="results/metrics")
     summary_df = evaluator.generate_comparison_table(multi_algo_results, save_csv=True)
     evaluator.export_per_run_data(multi_algo_results)
 
+    # Statistical significance testing (Welch's t-test and Mann-Whitney U)
+    hyb_costs = [r["best_details"].get("operating_cost", r["best_fitness"]) for r in multi_algo_results["Hybrid GWO-PSO"]]
+    pso_costs = [r["best_details"].get("operating_cost", r["best_fitness"]) for r in multi_algo_results["PSO"]]
+    gwo_costs = [r["best_details"].get("operating_cost", r["best_fitness"]) for r in multi_algo_results["GWO"]]
+
+    t_pso, p_pso = stats.ttest_ind(hyb_costs, pso_costs, equal_var=False)
+    t_gwo, p_gwo = stats.ttest_ind(hyb_costs, gwo_costs, equal_var=False)
+    u_pso, p_u_pso = stats.mannwhitneyu(hyb_costs, pso_costs, alternative="two-sided")
+    u_gwo, p_u_gwo = stats.mannwhitneyu(hyb_costs, gwo_costs, alternative="two-sided")
+
+    print("\n--- Statistical Significance Tests (Hybrid GWO-PSO vs Baselines) ---")
+    print(f"Hybrid vs PSO: Welch t = {t_pso:.3f} (p = {p_pso:.4f}), Mann-Whitney U = {u_pso:.1f} (p = {p_u_pso:.4f})")
+    print(f"Hybrid vs GWO: Welch t = {t_gwo:.3f} (p = {p_gwo:.4f}), Mann-Whitney U = {u_gwo:.1f} (p = {p_u_gwo:.4f})")
+
     print("\n================================================================================")
-    print("BENCHMARK COMPARISON SUMMARY TABLE")
+    print("BENCHMARK COMPARISON SUMMARY TABLE (PURE OPERATING COST)")
     print("================================================================================")
     cols_display = [
-        "algorithm", "best_cost_usd", "mean_cost_usd", "std_cost_usd",
-        "worst_cost_usd", "mean_runtime_sec", "re_utilization_pct", "feasibility_rate_pct"
+        "algorithm", "best_operating_cost_usd", "mean_operating_cost_usd", "std_operating_cost_usd",
+        "worst_operating_cost_usd", "mean_runtime_sec", "re_utilization_pct", "re_share_pct", "grid_dependency_pct", "feasibility_rate_pct"
     ]
     print(summary_df[cols_display].to_string(index=False))
 
@@ -91,8 +111,8 @@ def run_benchmark(
     viz.plot_wind_profile(scen, save_name="02_wind_generation_profile.png")
     viz.plot_load_demand(scen, save_name="03_load_demand_profile.png")
 
-    # Find best overall run (typically Hybrid GWO-PSO)
-    best_hybrid_run = min(multi_algo_results["Hybrid GWO-PSO"], key=lambda r: r["best_fitness"])
+    # Find best overall run
+    best_hybrid_run = min(multi_algo_results["Hybrid GWO-PSO"], key=lambda r: r["best_details"].get("operating_cost", r["best_fitness"]))
     viz.plot_energy_dispatch_distribution(
         best_hybrid_run, scen, algorithm_name="Hybrid GWO-PSO", save_name="04_energy_dispatch_distribution.png"
     )
@@ -104,7 +124,6 @@ def run_benchmark(
     pso_seed42 = next(r for r in multi_algo_results["PSO"] if r["seed"] == 42)
     gwo_seed42 = next(r for r in multi_algo_results["GWO"] if r["seed"] == 42)
     hyb_seed42 = next(r for r in multi_algo_results["Hybrid GWO-PSO"] if r["seed"] == 42)
-    ga_seed42 = next(r for r in multi_algo_results["GA"] if r["seed"] == 42)
 
     viz.plot_single_convergence(pso_seed42["convergence_curve"], "PSO", "#2980B9", "05_pso_convergence_curve.png")
     viz.plot_single_convergence(gwo_seed42["convergence_curve"], "GWO", "#27AE60", "06_gwo_convergence_curve.png")
@@ -115,7 +134,7 @@ def run_benchmark(
         "PSO": pso_seed42["convergence_curve"],
         "GWO": gwo_seed42["convergence_curve"],
         "Hybrid GWO-PSO": hyb_seed42["convergence_curve"],
-        "GA": ga_seed42["convergence_curve"]
+        "GA": next(r for r in multi_algo_results["GA"] if r["seed"] == 42)["convergence_curve"]
     }
     viz.plot_multi_convergence(algo_curves, save_name="07_multi_algorithm_convergence.png")
 

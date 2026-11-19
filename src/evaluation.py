@@ -2,6 +2,8 @@
 src/evaluation.py
 Calculates comprehensive statistical and operational metrics across
 multiple experimental runs and algorithms for renewable microgrid dispatch.
+Separates true operating costs from constraint penalties and evaluates
+all four standardized renewable energy metrics.
 """
 
 import os
@@ -27,18 +29,24 @@ class ExperimentEvaluator:
     def compute_run_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Computes aggregate statistics across multiple independent runs of a single algorithm.
+        Uses pure operating cost for economic comparisons and reports penalties separately.
         """
         if not results:
             raise ValueError("Empty results list provided.")
 
         algorithm_name = results[0]["algorithm"]
-        costs = np.array([r["best_fitness"] for r in results])
+        operating_costs = np.array([r["best_details"].get("operating_cost", r["best_fitness"]) for r in results])
+        penalties = np.array([r["best_details"].get("total_penalty", 0.0) for r in results])
         times = np.array([r["execution_time"] for r in results])
         
         re_utils = np.array([r["best_details"].get("re_utilization_pct", 0.0) for r in results])
+        re_shares = np.array([r["best_details"].get("re_share_pct", 0.0) for r in results])
         grid_deps = np.array([r["best_details"].get("grid_dependency_pct", 0.0) for r in results])
-        curtailments = np.array([r["best_details"].get("curtailment_kwh", 0.0) for r in results])
-        grid_imports = np.array([r["best_details"].get("grid_import_kwh", 0.0) for r in results])
+        re_curts = np.array([r["best_details"].get("re_curtailment_pct", 0.0) for r in results])
+        curtailments_kwh = np.array([r["best_details"].get("curtailment_kwh", 0.0) for r in results])
+        grid_imports_kwh = np.array([r["best_details"].get("grid_import_kwh", 0.0) for r in results])
+        unserved_kwh = np.array([r["best_details"].get("unserved_load_kwh", 0.0) for r in results])
+        terminal_soc_errs = np.array([r["best_details"].get("terminal_soc_error", 0.0) for r in results])
         
         # Battery throughput
         bat_throughputs = []
@@ -49,12 +57,12 @@ class ExperimentEvaluator:
 
         feasibilities = np.array([1.0 if r["best_details"].get("is_feasible", False) else 0.0 for r in results])
 
-        # Convergence speed: iteration index at which fitness is within 1% of final minimum
+        # Convergence speed: iteration index at which best cost reaches within 1% of final minimum
         conv_speeds = []
         for r in results:
             curve = r.get("convergence_curve", [])
-            final_val = r["best_fitness"]
-            threshold = final_val * 1.01  # within 1% of best
+            final_val = r["best_details"].get("operating_cost", r["best_fitness"])
+            threshold = final_val * 1.01
             reached_iter = len(curve) - 1
             for it_idx, val in enumerate(curve):
                 if val <= threshold:
@@ -66,18 +74,23 @@ class ExperimentEvaluator:
         summary = {
             "algorithm": algorithm_name,
             "runs_count": len(results),
-            "best_cost_usd": float(np.min(costs)),
-            "mean_cost_usd": float(np.mean(costs)),
-            "median_cost_usd": float(np.median(costs)),
-            "worst_cost_usd": float(np.max(costs)),
-            "std_cost_usd": float(np.std(costs)),
+            "best_operating_cost_usd": float(np.min(operating_costs)),
+            "mean_operating_cost_usd": float(np.mean(operating_costs)),
+            "median_operating_cost_usd": float(np.median(operating_costs)),
+            "worst_operating_cost_usd": float(np.max(operating_costs)),
+            "std_operating_cost_usd": float(np.std(operating_costs)),
+            "mean_penalty_usd": float(np.mean(penalties)),
             "mean_runtime_sec": float(np.mean(times)),
             "std_runtime_sec": float(np.std(times)),
             "mean_conv_iteration": float(np.mean(conv_speeds)),
             "re_utilization_pct": float(np.mean(re_utils)),
+            "re_share_pct": float(np.mean(re_shares)),
             "grid_dependency_pct": float(np.mean(grid_deps)),
-            "mean_curtailment_kwh": float(np.mean(curtailments)),
-            "mean_grid_import_kwh": float(np.mean(grid_imports)),
+            "re_curtailment_pct": float(np.mean(re_curts)),
+            "mean_curtailment_kwh": float(np.mean(curtailments_kwh)),
+            "mean_grid_import_kwh": float(np.mean(grid_imports_kwh)),
+            "mean_unserved_load_kwh": float(np.mean(unserved_kwh)),
+            "mean_terminal_soc_error": float(np.mean(terminal_soc_errs)),
             "mean_battery_throughput_kwh": float(np.mean(bat_throughputs)),
             "feasibility_rate_pct": float(np.mean(feasibilities) * 100.0)
         }
@@ -97,8 +110,8 @@ class ExperimentEvaluator:
             rows.append(metrics)
 
         df = pd.DataFrame(rows)
-        # Sort by mean cost
-        df = df.sort_values("mean_cost_usd").reset_index(drop=True)
+        # Sort by mean operating cost
+        df = df.sort_values("mean_operating_cost_usd").reset_index(drop=True)
 
         if save_csv:
             csv_path = os.path.join(self.metrics_dir, "algorithm_comparison_summary.csv")
@@ -122,14 +135,19 @@ class ExperimentEvaluator:
                 records.append({
                     "algorithm": algo_name,
                     "seed": r.get("seed", run_idx),
-                    "best_fitness": r["best_fitness"],
                     "operating_cost": d.get("operating_cost", r["best_fitness"]),
+                    "total_penalty": d.get("total_penalty", 0.0),
+                    "fitness": r["best_fitness"],
                     "execution_time_sec": r["execution_time"],
                     "is_feasible": d.get("is_feasible", True),
                     "re_utilization_pct": d.get("re_utilization_pct", 0.0),
+                    "re_share_pct": d.get("re_share_pct", 0.0),
                     "grid_dependency_pct": d.get("grid_dependency_pct", 0.0),
+                    "re_curtailment_pct": d.get("re_curtailment_pct", 0.0),
                     "curtailment_kwh": d.get("curtailment_kwh", 0.0),
                     "grid_import_kwh": d.get("grid_import_kwh", 0.0),
+                    "unserved_load_kwh": d.get("unserved_load_kwh", 0.0),
+                    "terminal_soc_error": d.get("terminal_soc_error", 0.0),
                     "battery_throughput_kwh": float(np.sum(np.abs(p_bat)))
                 })
 
