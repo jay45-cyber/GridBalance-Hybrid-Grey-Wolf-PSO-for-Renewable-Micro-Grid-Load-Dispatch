@@ -49,6 +49,9 @@ def run_optimization(algo: str, day_index: int = 15, seed: int = 42, pop_size: i
     elif algo == "hybrid":
         from experiments.run_hybrid import run
         run(day_index=day_index, seed=seed, pop_size=pop_size, max_iter=max_iter)
+    elif algo == "ga":
+        from experiments.run_ga import run
+        run(day_index=day_index, seed=seed, pop_size=pop_size, max_iter=max_iter)
     else:
         raise ValueError(f"Unknown algorithm: {algo}")
 
@@ -75,7 +78,7 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["all", "audit", "preprocess", "pso", "gwo", "hybrid", "benchmark", "test", "dashboard"],
+        choices=["all", "audit", "preprocess", "pso", "gwo", "hybrid", "ga", "benchmark", "test", "dashboard"],
         default="all",
         help="Execution mode (default: all)"
     )
@@ -90,7 +93,7 @@ def main():
         run_audit()
     elif args.mode == "preprocess":
         run_preprocess(day_index=args.day_index)
-    elif args.mode in ["pso", "gwo", "hybrid"]:
+    elif args.mode in ["pso", "gwo", "hybrid", "ga"]:
         run_optimization(args.mode, day_index=args.day_index, seed=args.seed, pop_size=args.pop_size, max_iter=args.max_iter)
     elif args.mode == "benchmark":
         run_benchmark(day_index=args.day_index, pop_size=args.pop_size, max_iter=args.max_iter)
