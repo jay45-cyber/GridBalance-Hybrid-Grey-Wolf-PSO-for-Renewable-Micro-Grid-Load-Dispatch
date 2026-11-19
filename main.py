@@ -63,7 +63,7 @@ def run_benchmark(day_index: int = 15, pop_size: int = 30, max_iter: int = 100):
 
 def run_tests():
     logger.info("Running automated test suite with pytest...")
-    ret = subprocess.run([sys.executable, "-m", "pytest", "tests/test_gridbalance_suite.py", "-v"])
+    ret = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-v"])
     return ret.returncode
 
 

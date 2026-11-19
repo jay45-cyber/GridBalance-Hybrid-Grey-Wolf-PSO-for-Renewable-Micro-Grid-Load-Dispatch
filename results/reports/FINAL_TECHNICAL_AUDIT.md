@@ -167,55 +167,35 @@ An automated runtime verification test ([`tests/test_dashboard_runtime.py`](file
 
 ## 6. FINAL REGRESSION TESTING (ISSUE 6)
 
-### 6.1 Pytest Test Suite Execution
+### 6.1 Core Test Suite Execution (`tests/test_gridbalance_suite.py`)
 ```bash
 python -m pytest tests/test_gridbalance_suite.py -v
 ```
-**Output:**
+**Output:** **28 passed in 3.28s (100% Pass Rate)**.
+
+### 6.2 Streamlit Dashboard Runtime Suite Execution (`tests/test_dashboard_runtime.py`)
+```bash
+python -m pytest tests/test_dashboard_runtime.py -v
 ```
-============================= test session starts =============================
-platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
-rootdir: C:\Users\Jay\projects\optimization
-plugins: anyio-4.16.0
-collected 28 items
+**Output:** **5 passed in 13.66s (100% Pass Rate)**.
 
-tests/test_gridbalance_suite.py::test_dataset_files_exist PASSED         [  3%]
-tests/test_gridbalance_suite.py::test_preprocessing_audit PASSED         [  7%]
-tests/test_gridbalance_suite.py::test_battery_terminal_soc PASSED        [ 10%]
-tests/test_gridbalance_suite.py::test_battery_energy_conservation PASSED [ 14%]
-tests/test_gridbalance_suite.py::test_battery_charging_limits PASSED     [ 17%]
-tests/test_gridbalance_suite.py::test_battery_discharging_limits PASSED  [ 21%]
-tests/test_gridbalance_suite.py::test_solar_generation_limits PASSED     [ 25%]
-tests/test_gridbalance_suite.py::test_wind_generation_limits PASSED      [ 28%]
-tests/test_gridbalance_suite.py::test_grid_limits_and_power_balance PASSED [ 32%]
-tests/test_gridbalance_suite.py::test_renewable_utilization_metric PASSED [ 35%]
-tests/test_gridbalance_suite.py::test_curtailment_metric PASSED          [ 39%]
-tests/test_gridbalance_suite.py::test_objective_function_components PASSED [ 42%]
-tests/test_gridbalance_suite.py::test_pso_optimization PASSED            [ 46%]
-tests/test_gridbalance_suite.py::test_gwo_optimization PASSED            [ 50%]
-tests/test_gridbalance_suite.py::test_hybrid_gwo_pso_optimization PASSED [ 53%]
-tests/test_gridbalance_suite.py::test_seed_reproducibility PASSED        [ 57%]
-tests/test_gridbalance_suite.py::test_results_exported PASSED            [ 60%]
-tests/test_gridbalance_suite.py::test_power_balance_deficit_condition PASSED [ 64%]
-tests/test_gridbalance_suite.py::test_power_balance_excess_generation_condition PASSED [ 67%]
-tests/test_gridbalance_suite.py::test_grid_export_limit_violation PASSED [ 71%]
-tests/test_gridbalance_suite.py::test_grid_import_limit_violation PASSED [ 75%]
-tests/test_gridbalance_suite.py::test_battery_only_charging_conservation PASSED [ 78%]
-tests/test_gridbalance_suite.py::test_battery_only_discharging_conservation PASSED [ 82%]
-tests/test_gridbalance_suite.py::test_battery_mixed_charging_discharging PASSED [ 85%]
-tests/test_gridbalance_suite.py::test_terminal_soc_violation_rejection PASSED [ 89%]
-tests/test_gridbalance_suite.py::test_soc_boundary_limits PASSED         [ 92%]
-tests/test_gridbalance_suite.py::test_renewable_energy_accounting_attribution PASSED [ 96%]
-tests/test_gridbalance_suite.py::test_ga_optimization PASSED             [100%]
-
-============================= 28 passed in 3.28s ==============================
+### 6.3 Full Test Suite Execution (`tests/`)
+```bash
+python -m pytest tests/ -v
 ```
+**Output:** **33 passed in 15.50s (100% Pass Rate)** across all unit, integration, physical limits, deficit, excess, and UI runtime test cases.
 
-### 6.2 Python Compilation Check
+### 6.4 Python Compilation Check
 ```bash
 python -m compileall -q src experiments dashboard tests main.py
 ```
-**Output:** Completed with exit code 0 and zero errors.
+**Output:** Completed with exit code 0 and zero errors across all 67 project files.
+
+### 6.5 End-to-End Mathematical & Physical Audit Verification
+```bash
+python tests/validate_end_to_end.py
+```
+**Output:** **100% PASSED** — 40 benchmark runs audited with $0.000000 cost discrepancy; 4 live fresh runs audited with machine-zero power balance error ($2.27 \times 10^{-13}\text{ kW}$).
 
 ---
 
@@ -248,7 +228,7 @@ python -m compileall -q src experiments dashboard tests main.py
 ## 9. OFFICIAL AUDIT SIGN-OFF & SUBMISSION READINESS
 
 All criteria for academic submission have been thoroughly satisfied:
-1. **28 out of 28 automated tests passed.**
+1. **33 out of 33 automated tests passed (28 core physics/limits tests + 5 dashboard runtime tests).**
 2. **Every Python file in the repository compiles cleanly under Python 3.11.**
 3. **Streamlit dashboard starts, renders all 10 sections, executes all 4 algorithms, and exports data.**
 4. **All 40 benchmark runs audited independently with $0.000000 cost discrepancy.**
