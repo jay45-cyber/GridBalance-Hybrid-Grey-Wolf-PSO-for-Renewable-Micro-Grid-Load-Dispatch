@@ -1,0 +1,140 @@
+# ==============================================================================
+# GridBalance System Configuration & Parameters
+# Hybrid Grey Wolf - PSO for Renewable Micro-Grid Load Dispatch
+# ==============================================================================
+
+system:
+  name: "GridBalance Microgrid (IEEE-33 Bus Derived)"
+  version: "1.0.0"
+  description: "Renewable microgrid dispatch optimizing Solar PV, Wind, BESS, and Grid"
+  base_mva: 1.0                     # Base apparent power in MVA (1.0 MVA = 1000 kVA)
+  base_voltage_kv: 12.66            # Nominal voltage (IEEE-33 standard)
+  dispatch_horizon_hours: 24        # 24-hour dispatch horizon
+  time_resolution_minutes: 60       # 60 min for hourly dispatch (or 15 min for 96 steps)
+  time_step_hours: 1.0              # Delta t in hours
+
+# ------------------------------------------------------------------------------
+# Dataset Configuration (DDRE-33 Dataset)
+# Source: Scientific Data (Nature Portfolio) 2025; DOI: 10.6084/m9.figshare.29374640
+# ------------------------------------------------------------------------------
+dataset:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  samples_dir: "data/samples"
+  solar_raw_file: "node_33_solar_1.csv"
+  solar_real_file: "solar33_real.csv"
+  solar_syn_file: "ddpm_syn_solar.csv"
+  wind_raw_file: "node_22_wind_1.csv"
+  wind_syn_file: "ddpm_syn_wind.csv"
+  scenario_sample_days: 7           # Number of representative days sampled for multi-scenario testing
+  default_scenario_day: 15          # Representative day index (Day 15 of dataset: July 15)
+
+# ------------------------------------------------------------------------------
+# Generation Resources (Solar PV & Wind Turbines)
+# Rated capacities scaled to IEEE-33 bus feeder subsystem
+# ------------------------------------------------------------------------------
+solar_pv:
+  bus_id: 33                        # DDRE-33 placement node
+  rated_capacity_kw: 1200.0         # 1.2 MW rated peak PV capacity
+  unit_om_cost_per_kwh: 0.010       # $0.010/kWh O&M operating cost
+  curtailment_penalty_per_kwh: 0.050 # $0.050/kWh penalty for curtailed solar
+  min_power_kw: 0.0
+
+wind_turbine:
+  bus_id: 22                        # DDRE-33 placement node
+  rated_capacity_kw: 1000.0         # 1.0 MW rated peak Wind capacity
+  unit_om_cost_per_kwh: 0.015       # $0.015/kWh O&M operating cost
+  curtailment_penalty_per_kwh: 0.050 # $0.050/kWh penalty for curtailed wind
+  min_power_kw: 0.0
+
+# ------------------------------------------------------------------------------
+# Battery Energy Storage System (BESS)
+# Explicitly declared simulation parameters (since BESS is unmeasured in DDRE-33)
+# ------------------------------------------------------------------------------
+battery:
+  technology: "Lithium-Iron-Phosphate (LFP)"
+  nominal_energy_capacity_kwh: 2000.0 # 2.0 MWh energy capacity
+  max_charge_power_kw: 600.0          # Max charge rate (0.3C)
+  max_discharge_power_kw: 600.0       # Max discharge rate (0.3C)
+  charge_efficiency: 0.95             # 95% one-way charging efficiency
+  discharge_efficiency: 0.95          # 95% one-way discharging efficiency
+  initial_soc: 0.50                   # Initial State of Charge (50%)
+  soc_min: 0.20                       # Minimum allowable SOC (20%)
+  soc_max: 0.90                       # Maximum allowable SOC (90%)
+  degradation_cost_per_kwh: 0.018     # $0.018/kWh throughput degradation cost
+  self_discharge_rate_per_hour: 0.0001 # 0.01% self-discharge per hour
+
+# ------------------------------------------------------------------------------
+# Main Utility Grid Interconnection
+# Point of Common Coupling (PCC) at Bus 1 (Substation)
+# ------------------------------------------------------------------------------
+grid:
+  pcc_bus_id: 1
+  max_import_power_kw: 2500.0         # Max grid import capacity
+  max_export_power_kw: 1000.0         # Max grid export capacity
+  co2_emission_factor_kg_per_kwh: 0.52 # 0.52 kg CO2 / kWh grid electricity
+  carbon_tax_per_kg_co2: 0.03         # $0.03 / kg CO2 ($30 / ton CO2)
+
+  # Time-of-Use (TOU) Electricity Tariffs ($/kWh)
+  # 24-hour tariff schedule (Hours 0-23)
+  tou_tariff:
+    # Off-Peak: 23:00 - 07:00 ($0.06 / kWh)
+    # Shoulder: 07:00 - 14:00, 20:00 - 23:00 ($0.12 / kWh)
+    # Peak:     14:00 - 20:00 ($0.24 / kWh)
+    hourly_import_rates: [
+      0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, # 00:00 - 06:00
+      0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, # 07:00 - 13:00
+      0.24, 0.24, 0.24, 0.24, 0.24, 0.24,       # 14:00 - 19:00
+      0.12, 0.12, 0.12,                         # 20:00 - 22:00
+      0.06                                      # 23:00
+    ]
+    # Feed-in Tariff (Export credit $/kWh)
+    export_credit_rate: 0.040
+
+# ------------------------------------------------------------------------------
+# Electricity Demand (Load Profile)
+# Based on standard IEEE-33 total load (3.715 MW peak total) scaled to the microgrid
+# subsystem (1.6 MW peak active load) with standard commercial/residential diurnal cycle
+# ------------------------------------------------------------------------------
+load:
+  peak_demand_kw: 1600.0              # Microgrid peak active load in kW
+  base_demand_kw: 650.0               # Minimum off-peak base load in kW
+  unserved_energy_penalty_per_kwh: 2.00 # $2.00 / kWh penalty for unserved load (VOLL)
+  # Hourly normalized load multiplier profile (24 hours, sums or scales to peak)
+  hourly_load_multipliers: [
+    0.48, 0.44, 0.42, 0.41, 0.43, 0.49, 0.62, # 00:00 - 06:00
+    0.75, 0.84, 0.89, 0.92, 0.94, 0.91, 0.88, # 07:00 - 13:00
+    0.93, 0.98, 1.00, 0.97, 0.94, 0.86,       # 14:00 - 19:00
+    0.78, 0.70, 0.61, 0.52                    # 20:00 - 23:00
+  ]
+
+# ------------------------------------------------------------------------------
+# Optimization Algorithm Parameters
+# ------------------------------------------------------------------------------
+optimization:
+  population_size: 30
+  max_iterations: 100
+  num_runs_for_comparison: 10         # Multi-seed benchmarking runs
+  random_seeds: [42, 101, 203, 314, 425, 536, 647, 758, 869, 970]
+  penalty_multiplier_power_balance: 50.0 # Strict penalty factor for power balance deficit/excess
+  penalty_multiplier_soc_violation: 100.0 # Strict penalty for SOC violation
+
+  pso:
+    inertia_weight_max: 0.9
+    inertia_weight_min: 0.4
+    cognitive_c1: 1.8
+    social_c2: 1.8
+    velocity_clamping_ratio: 0.20     # Max velocity = 20% of search space width
+
+  gwo:
+    a_initial: 2.0
+    a_final: 0.0
+
+  hybrid_gwo_pso:
+    inertia_weight_max: 0.9
+    inertia_weight_min: 0.4
+    cognitive_c1: 1.5
+    social_c2: 1.5
+    lambda_initial: 0.80              # Early iteration weight favoring GWO leadership
+    lambda_final: 0.20                # Late iteration weight favoring PSO velocity exploitation
+    velocity_clamping_ratio: 0.20

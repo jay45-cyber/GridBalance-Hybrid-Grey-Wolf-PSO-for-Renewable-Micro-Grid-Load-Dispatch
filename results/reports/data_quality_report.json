@@ -1,0 +1,44 @@
+{
+  "dataset_name": "DDRE-33 (Distributed Renewable Energy Scenarios)",
+  "doi": "10.6084/m9.figshare.29374640",
+  "files": {
+    "solar_pv_bus33": {
+      "file_path": "data/raw/node_33_solar_1.csv",
+      "total_rows": 35040,
+      "columns": [
+        "timestamp",
+        "OT"
+      ],
+      "target_column": "OT",
+      "missing_values": 0,
+      "duplicate_timestamps": 0,
+      "invalid_numeric_values": 0,
+      "min_value_pu": 0.0,
+      "max_value_pu": 0.859287026,
+      "mean_value_pu": 0.099396,
+      "std_value_pu": 0.1805,
+      "negative_count": 0,
+      "greater_than_one_count": 0,
+      "status": "VALID"
+    },
+    "wind_bus22": {
+      "file_path": "data/raw/node_22_wind_1.csv",
+      "total_rows": 35040,
+      "columns": [
+        "timestamp",
+        "OT"
+      ],
+      "target_column": "OT",
+      "missing_values": 0,
+      "duplicate_timestamps": 0,
+      "invalid_numeric_values": 0,
+      "min_value_pu": 0.0,
+      "max_value_pu": 1.0,
+      "mean_value_pu": 0.229823,
+      "std_value_pu": 0.24223,
+      "negative_count": 0,
+      "greater_than_one_count": 0,
+      "status": "VALID"
+    }
+  }
+}
