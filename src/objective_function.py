@@ -149,11 +149,15 @@ class MicrogridObjective:
             p_battery=p_bat_act,
             p_grid=p_grid,
             soc_trajectory=soc,
-            scenario=scenario
+            scenario=scenario,
+            p_grid_import=p_grid_import,
+            p_grid_export=p_grid_export,
+            unserved_load=unserved_load,
+            excess_generation=excess_gen
         )
-        is_feasible = bool(c_report["is_feasible"] and not terminal_soc_violated and unserved_total_kwh < 1e-3 and excess_total_kwh < 1e-3)
+        is_feasible = bool(c_report["is_feasible"])
 
-        # 7. Rigorous Renewable Energy Metrics (Corrected)
+        # 7. Rigorous Renewable Energy Accounting & Attribution Tracking
         total_re_avail_kwh = float(np.sum(p_solar_avail + p_wind_avail) * dt)
         total_re_dispatched_kwh = float(np.sum(p_solar + p_wind) * dt)
         total_load_kwh = float(np.sum(p_load * dt))
@@ -165,38 +169,67 @@ class MicrogridObjective:
         # Metric D: Renewable curtailment (%) = Unused RE / Available RE * 100
         re_curtailment_pct = float((total_curtailment_kwh / total_re_avail_kwh) * 100.0) if total_re_avail_kwh > 0 else 0.0
 
-        # Metric B: Renewable share (%) = RE serving demand / Total served demand * 100
-        # Track clean energy dispatched directly plus clean battery throughput without double counting
-        re_serving_demand_kwh = 0.0
-        bat_stored_re_kwh = 0.0
-        bat_stored_total_kwh = 0.0
+        # Attribution accounting: tracking energy origin, storage pathways, and losses
+        re_direct_to_demand_kwh = 0.0
+        re_stored_in_battery_kwh = 0.0
+        grid_stored_in_battery_kwh = 0.0
+        battery_charge_losses_kwh = 0.0
+        battery_discharge_losses_kwh = 0.0
+        re_discharged_from_battery_kwh = 0.0
+
+        # Storage inventory tracking
+        e_chem_tot = float(self.energy_model.soc_init * self.energy_model.e_bat_kwh)
+        e_chem_re = float(e_chem_tot * 0.50)  # Initial storage baseline attribution (50% clean origin)
 
         for t in range(T):
-            re_gen_t = (p_solar[t] + p_wind[t]) * dt
-            load_t = p_load[t] * dt
+            re_gen_t = float((p_solar[t] + p_wind[t]) * dt)
+            load_t = float(p_load[t] * dt)
 
-            # Direct renewable power serving demand at hour t
-            direct_re_served = min(load_t, re_gen_t)
-            re_serving_demand_kwh += direct_re_served
+            # 1. Renewable directly serving demand
+            direct_re = min(load_t, re_gen_t)
+            re_direct_to_demand_kwh += direct_re
 
-            # Renewable surplus charging battery
-            re_surplus = max(0.0, re_gen_t - load_t)
-            ch_kwh = p_bat_ch[t] * dt
-            if ch_kwh > 1e-6:
-                clean_fraction = min(1.0, re_surplus / ch_kwh)
-                bat_stored_re_kwh += ch_kwh * clean_fraction * self.energy_model.eta_ch
-                bat_stored_total_kwh += ch_kwh * self.energy_model.eta_ch
+            # 2. Surplus renewable available for battery charging
+            re_surplus = max(0.0, re_gen_t - direct_re)
+            ch_input_t = float(p_bat_ch[t] * dt)
 
-            # Discharging battery to serve demand
-            dis_kwh = p_bat_dis[t] * dt
-            if dis_kwh > 1e-6 and bat_stored_total_kwh > 1e-6:
-                clean_dis_ratio = min(1.0, bat_stored_re_kwh / bat_stored_total_kwh)
-                clean_dis_kwh = min(dis_kwh, dis_kwh * clean_dis_ratio)
-                re_serving_demand_kwh += clean_dis_kwh
-                bat_stored_re_kwh = max(0.0, bat_stored_re_kwh - clean_dis_kwh)
-                bat_stored_total_kwh = max(0.0, bat_stored_total_kwh - dis_kwh)
+            # Charging attribution
+            re_to_bat_input = min(ch_input_t, re_surplus)
+            grid_to_bat_input = max(0.0, ch_input_t - re_to_bat_input)
 
-        re_share_pct = float(min(100.0, (re_serving_demand_kwh / total_served_load_kwh) * 100.0))
+            re_stored_in_battery_kwh += re_to_bat_input
+            grid_stored_in_battery_kwh += grid_to_bat_input
+
+            # Charging losses
+            loss_ch = ch_input_t * (1.0 - self.energy_model.eta_ch)
+            battery_charge_losses_kwh += loss_ch
+
+            # Chemical energy increment
+            delta_chem_re = re_to_bat_input * self.energy_model.eta_ch
+            delta_chem_grid = grid_to_bat_input * self.energy_model.eta_ch
+
+            # Update inventory before discharge (including self-discharge)
+            sd_factor = 1.0 - self.energy_model.self_discharge * dt
+            e_chem_tot = e_chem_tot * sd_factor + delta_chem_re + delta_chem_grid
+            e_chem_re = e_chem_re * sd_factor + delta_chem_re
+
+            # Discharging attribution
+            dis_output_t = float(p_bat_dis[t] * dt)
+            if dis_output_t > 1e-6 and e_chem_tot > 1e-6:
+                clean_ratio = min(1.0, max(0.0, e_chem_re / e_chem_tot))
+                chem_drawn = dis_output_t / self.energy_model.eta_dis
+                loss_dis = chem_drawn - dis_output_t
+                battery_discharge_losses_kwh += loss_dis
+
+                re_dis = dis_output_t * clean_ratio
+                re_discharged_from_battery_kwh += re_dis
+
+                e_chem_re = max(0.0, e_chem_re - chem_drawn * clean_ratio)
+                e_chem_tot = max(0.0, e_chem_tot - chem_drawn)
+
+        # Metric B: Renewable share (%) = (Direct RE + Clean RE Discharged from Battery) / Served Demand * 100
+        total_clean_energy_served = re_direct_to_demand_kwh + re_discharged_from_battery_kwh
+        re_share_pct = float(min(100.0, (total_clean_energy_served / total_served_load_kwh) * 100.0))
 
         # Metric C: Grid dependency (%) = Grid import energy / Total served demand * 100
         grid_dependency_pct = float(min(100.0, (grid_import_total_kwh / total_served_load_kwh) * 100.0))
@@ -225,6 +258,12 @@ class MicrogridObjective:
             "grid_export_kwh": float(np.sum(p_grid_export * dt)),
             "unserved_load_kwh": unserved_total_kwh,
             "excess_generation_kwh": excess_total_kwh,
+            "re_direct_to_demand_kwh": re_direct_to_demand_kwh,
+            "re_stored_in_battery_kwh": re_stored_in_battery_kwh,
+            "grid_stored_in_battery_kwh": grid_stored_in_battery_kwh,
+            "battery_charge_losses_kwh": battery_charge_losses_kwh,
+            "battery_discharge_losses_kwh": battery_discharge_losses_kwh,
+            "re_discharged_from_battery_kwh": re_discharged_from_battery_kwh,
             "soc_initial": sim["soc_initial"],
             "soc_final": sim["soc_final"],
             "terminal_soc_error": terminal_soc_error,

@@ -74,9 +74,10 @@ def run(day_index: int = 15, seed: int = 42, pop_size: int = 30, max_iter: int =
         "battery_charge_kw": d["p_battery_charge"],
         "grid_import_kw": d["p_grid_import"],
         "grid_export_kw": d["p_grid_export"],
-        "unserved_load_kw": d["unserved_load_kwh"],
-        "excess_generation_kw": d["excess_generation_kwh"],
+        "unserved_load_kw": d.get("unserved_load", np.zeros(T)),
+        "excess_generation_kw": d.get("excess_generation", np.zeros(T)),
         "soc_start": d["soc_trajectory"][:-1],
+        "soc_end": d["soc_trajectory"][1:],
         "load_demand_kw": scen["load_demand_kw"]
     })
     os.makedirs("results/metrics", exist_ok=True)

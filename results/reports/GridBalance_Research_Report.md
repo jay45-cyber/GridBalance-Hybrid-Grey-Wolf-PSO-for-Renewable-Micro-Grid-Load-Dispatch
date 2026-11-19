@@ -92,33 +92,36 @@ where:
    $$C_{emission}(t) = \kappa_{CO2} \cdot \gamma_{emission} \cdot \max(0, P_{grid}(t))$$
 
 ### 3.2 System Physical Constraints
-1. **Power Balance Equality Constraint**:
-   $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid}(t) + P_{unserved}(t) - P_{excess}(t) = P_{load}(t), \quad \forall t \in \{1, \dots, T\}$$
-   where $P_{battery}(t) > 0$ denotes discharge and $P_{battery}(t) < 0$ denotes charge, with $P_{unserved}(t) \ge 0$ (unserved load) and $P_{excess}(t) \ge 0$ (excess generation).
+1. **Power Balance Equality Identity**:
+   $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid, import}(t) - P_{grid, export}(t) + P_{unserved}(t) - P_{excess}(t) = P_{load}(t), \quad \forall t \in \{1, \dots, T\}$$
+   where $P_{battery}(t) > 0$ denotes discharge and $P_{battery}(t) < 0$ denotes charge, with $P_{unserved}(t) \ge 0$ (unserved load) and $P_{excess}(t) \ge 0$ (excess generation) evaluated at every discrete time step.
 2. **Generation Dispatch Bounds**:
    $$0 \le P_{solar}(t) \le P_{solar, avail}(t), \quad \forall t$$
    $$0 \le P_{wind}(t) \le P_{wind, avail}(t), \quad \forall t$$
-3. **Grid Substation Capacity Bounds**:
-   $$-P_{grid, export, max} \le P_{grid}(t) \le P_{grid, import, max}, \quad \forall t$$
+3. **Independent Grid Substation Capacity Bounds**:
+   $$0 \le P_{grid, import}(t) \le P_{grid, import, max} \quad (2,500.0\text{ kW})$$
+   $$0 \le P_{grid, export}(t) \le P_{grid, export, max} \quad (1,000.0\text{ kW})$$
 4. **BESS Dynamic State of Charge (SOC) Dynamics**:
    $$\text{SOC}(t) = \text{SOC}(t-1)(1 - \sigma_{sd} \Delta t) - \frac{P_{battery}(t) \Delta t}{E_{bat}} \cdot \begin{cases} \frac{1}{\eta_{dis}}, & P_{battery}(t) \ge 0 \text{ (discharging)} \\ \eta_{ch}, & P_{battery}(t) < 0 \text{ (charging)} \end{cases}$$
-   $$\text{SOC}_{min} \le \text{SOC}(t) \le \text{SOC}_{max}, \quad \forall t \in \{1, \dots, T\}$$
+   $$\text{SOC}_{min} \le \text{SOC}(t) \le \text{SOC}_{max}, \quad \forall t \in \{0, \dots, T\}$$
    $$-P_{ch, max} \le P_{battery}(t) \le P_{dis, max}, \quad \forall t$$
+   with $\text{SOC}_{min} = 0.20, \quad \text{SOC}_{max} = 0.90, \quad \text{SOC}_{init} = 0.50, \quad P_{ch, max} = P_{dis, max} = 600.0\text{ kW}$.
 5. **Cyclic Terminal SOC Constraint**:
    $$|\text{SOC}(T) - \text{SOC}_{init}| \le \epsilon_{term} \quad (\epsilon_{term} = 0.01)$$
    This condition guarantees zero net energy depletion across the cyclic 24-hour horizon.
 
-### 3.3 Standardized Renewable Energy Metrics
-To eliminate ambiguity and prevent double-counting of stored clean energy, four standardized metrics are formulated:
+### 3.3 Standardized Clean Energy Metrics & Attribution
+To eliminate ambiguity and prevent double-counting of stored clean energy, four standardized metrics and an attribution model are formulated:
 * **Metric A: Renewable Energy Utilization (%)**:
   $$\text{RE Utilization} = \frac{\sum_{t=1}^T \left( P_{solar, disp}(t) + P_{wind, disp}(t) \right) \Delta t}{\sum_{t=1}^T \left( P_{solar, avail}(t) + P_{wind, avail}(t) \right) \Delta t} \times 100$$
-* **Metric B: Renewable Share of Demand (%)**:
-  $$\text{RE Share} = \frac{\sum_{t=1}^T \min\left( P_{load}(t), P_{solar, disp}(t) + P_{wind, disp}(t) \right) \Delta t}{\sum_{t=1}^T P_{load}(t) \Delta t} \times 100$$
+* **Metric B: Renewable Share of Served Demand (%)**:
+  $$\text{RE Share} = \frac{\sum_{t=1}^T P_{re \to demand}(t)\Delta t + \sum_{t=1}^T E_{re, dis}(t)}{\sum_{t=1}^T P_{load}(t)\Delta t - E_{unserved}} \times 100$$
+  where $E_{re, dis}(t)$ tracks battery discharge originating strictly from renewable surplus (discounted for round-trip efficiency), eliminating double counting.
 * **Metric C: Grid Dependency (%)**:
-  $$\text{Grid Dependency} = \frac{\sum_{t=1}^T \max\left(0, P_{grid}(t)\right) \Delta t}{\sum_{t=1}^T P_{load}(t) \Delta t} \times 100$$
+  $$\text{Grid Dependency} = \frac{\sum_{t=1}^T P_{grid, import}(t) \Delta t}{\sum_{t=1}^T P_{load}(t) \Delta t - E_{unserved}} \times 100$$
 * **Metric D: Renewable Energy Curtailment (%)**:
   $$\text{RE Curtailment} = \frac{\sum_{t=1}^T P_{curt}(t) \Delta t}{\sum_{t=1}^T \left( P_{solar, avail}(t) + P_{wind, avail}(t) \right) \Delta t} \times 100$$
-  *Identity*: $\text{RE Utilization} + \text{RE Curtailment} \equiv 100.0\%$.
+  *Conservation Identity*: $\text{RE Utilization} + \text{RE Curtailment} \equiv 100.0\%$.
 
 ### 3.4 Feasibility Repair Operator and Cost-Penalty Separation
 To guarantee that candidate solutions strictly satisfy physical limits, a deterministic Feasibility Repair operator $\mathcal{R}(\vec{X})$ is enforced:
@@ -127,7 +130,7 @@ To guarantee that candidate solutions strictly satisfy physical limits, a determ
 3. Balances net battery throughput over the horizon to achieve cyclic terminal SOC conservation $|\text{SOC}(T) - \text{SOC}_{init}| \le 0.01$.
 4. Assigns grid power to strictly balance residual load within physical capacity:
    $$P_{raw}(t) = P_{load}(t) - P_{solar}(t) - P_{wind}(t) - P_{battery}(t)$$
-   If $P_{raw}(t) > P_{grid, max}$, imports are capped at $P_{grid, max}$ and the deficit is recorded as $P_{unserved}(t)$.
+   If $P_{raw}(t) > P_{grid, import, max}$, imports are capped at $2,500\text{ kW}$ and deficit is recorded as $P_{unserved}(t)$. If $P_{raw}(t) < -P_{grid, export, max}$, reverse flow is capped at $1,000\text{ kW}$ and surplus is recorded as $P_{excess}(t)$.
 5. Total Fitness is strictly partitioned into pure operating cost and constraint penalties:
    $$\text{Fitness} = C_{oper} + \mu_{unserved} E_{unserved} + \mu_{excess} E_{excess} + C_{pen, term} + \mu_{soc} \sum \text{Viol}_{soc}$$
 
@@ -267,8 +270,17 @@ All experimental artifacts were saved directly into the repository:
 
 ---
 
-## 7. Conclusions & Future Work
-GridBalance demonstrates that nature-inspired metaheuristic hybridization effectively balances exploration and exploitation for renewable microgrid load dispatch. By coupling authentic DDRE-33 generation scenarios with a rigorous mathematical model and deterministic feasibility repair, the system provides reproducible, verifiable dispatch optimization. Future enhancements will integrate non-linear AC optimal power flow (AC-OPF) voltage constraints and stochastic model-predictive control (MPC).
+## 7. Conclusions, Research Limitations & Future Work
+
+### 7.1 Research Conclusions
+GridBalance demonstrates that nature-inspired metaheuristic hybridization effectively balances exploration and exploitation for renewable microgrid economic load dispatch. By coupling authentic DDRE-33 generation scenarios with a rigorous mathematical model and deterministic feasibility repair, the system provides reproducible, verifiable dispatch optimization. Standalone PSO achieved the lowest mean cost ($3,197.39) on this active power problem, while Hybrid GWO-PSO demonstrated superior stability ($\sigma = \$45.09$ vs $\$82.47$ for PSO) and achieved a statistically significant cost reduction over standalone GWO ($p = 0.0031$, Welch's t-test), saving an average of \$97.68/day.
+
+### 7.2 Explicit Limitations & Scope Boundaries
+To uphold strict scientific integrity, the following boundaries of this study are declared:
+1. **Demand Profile Origin**: Electricity demand is modeled using a declared diurnal commercial/residential profile scaled to IEEE-33 feeder peak ratings (1,600 kW peak), rather than measured DDRE-33 time-series (which contain Solar PV at Bus 33 and Wind at Bus 22).
+2. **Aggregated Active Power Dispatch vs. AC-OPF**: The model enforces active power balance ($P$) and transformer limits. Branch reactive power flows ($Q$), line $I^2 R$ losses, and bus voltage bounds ($0.95 \le V_i \le 1.05\text{ p.u.}$) are not evaluated, which is appropriate for system-level economic scheduling but requires full AC Optimal Power Flow (AC-OPF) for detailed distribution voltage stability analysis.
+3. **Scenario Horizon & Generalization**: The 10-seed benchmarks were conducted on canonical Day 15 (July 15). While feasibility repair guarantees compliance on this representative day, full annual seasonal dispatch requires testing across all 365 scenarios.
+4. **Terminal SOC Model**: The daily cyclic equality constraint assumes periodic daily operation ($SOC_{final} = SOC_{initial}$). Non-periodic intraday scheduling requires dynamic boundary pricing from day-ahead market commitments.
 
 ---
 

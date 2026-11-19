@@ -56,22 +56,25 @@ battery:
   nominal_energy_capacity_kwh: 2000.0 # 2.0 MWh energy capacity
   max_charge_power_kw: 600.0          # Max charge rate (0.3C)
   max_discharge_power_kw: 600.0       # Max discharge rate (0.3C)
-  charge_efficiency: 0.95             # 95% one-way charging efficiency
-  discharge_efficiency: 0.95          # 95% one-way discharging efficiency
-  initial_soc: 0.50                   # Initial State of Charge (50%)
-  soc_min: 0.20                       # Minimum allowable SOC (20%)
-  soc_max: 0.90                       # Maximum allowable SOC (90%)
+  charge_efficiency: 0.95             # 95% one-way charging efficiency (eta_ch)
+  discharge_efficiency: 0.95          # 95% one-way discharging efficiency (eta_dis)
+  initial_soc: 0.50                   # Initial State of Charge at t=0 (50.0%)
+  soc_min: 0.20                       # Minimum allowable operating SOC (20.0%)
+  soc_max: 0.90                       # Maximum allowable operating SOC (90.0%)
+  terminal_soc_target: 0.50           # Cyclic terminal SOC target at t=T (50.0%)
+  terminal_soc_tolerance: 0.01        # Allowable terminal SOC deviation tolerance (+/- 1.0%)
   degradation_cost_per_kwh: 0.018     # $0.018/kWh throughput degradation cost
   self_discharge_rate_per_hour: 0.0001 # 0.01% self-discharge per hour
 
 # ------------------------------------------------------------------------------
 # Main Utility Grid Interconnection
 # Point of Common Coupling (PCC) at Bus 1 (Substation)
+# Explicitly declared simulation constraints & tariffs
 # ------------------------------------------------------------------------------
 grid:
   pcc_bus_id: 1
-  max_import_power_kw: 2500.0         # Max grid import capacity
-  max_export_power_kw: 1000.0         # Max grid export capacity
+  max_import_power_kw: 2500.0         # Maximum utility substation import capacity (2.5 MW)
+  max_export_power_kw: 1000.0         # Maximum reverse power flow export capacity (1.0 MW)
   co2_emission_factor_kg_per_kwh: 0.52 # 0.52 kg CO2 / kWh grid electricity
   carbon_tax_per_kg_co2: 0.03         # $0.03 / kg CO2 ($30 / ton CO2)
 

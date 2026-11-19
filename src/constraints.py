@@ -6,7 +6,7 @@ Provides detailed independent violation metrics and feasibility reporting.
 """
 
 import numpy as np
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 
 class MicrogridConstraints:
@@ -39,17 +39,46 @@ class MicrogridConstraints:
         p_solar: np.ndarray,
         p_wind: np.ndarray,
         p_battery: np.ndarray,
-        p_grid: np.ndarray,
-        soc_trajectory: np.ndarray,
-        scenario: Dict[str, Any]
+        p_grid: Optional[np.ndarray] = None,
+        soc_trajectory: Optional[np.ndarray] = None,
+        scenario: Dict[str, Any] = None,
+        p_grid_import: Optional[np.ndarray] = None,
+        p_grid_export: Optional[np.ndarray] = None,
+        unserved_load: Optional[np.ndarray] = None,
+        excess_generation: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Evaluates individual constraint violations for a candidate dispatch schedule.
         Returns detailed numerical violations and Boolean feasibility flags.
+        
+        Enforces consistent power balance identity:
+        P_solar + P_wind + P_battery + P_grid_import - P_grid_export + P_unserved - P_excess = P_load
         """
         p_solar_avail = scenario["solar_available_kw"]
         p_wind_avail = scenario["wind_available_kw"]
         p_load = scenario["load_demand_kw"]
+        T = len(p_load)
+
+        # Derive import/export and imbalance if not provided directly
+        if p_grid is not None:
+            if p_grid_import is None:
+                p_grid_import = np.maximum(0.0, p_grid)
+            if p_grid_export is None:
+                p_grid_export = np.maximum(0.0, -p_grid)
+        else:
+            if p_grid_import is None:
+                p_grid_import = np.zeros(T, dtype=np.float64)
+            if p_grid_export is None:
+                p_grid_export = np.zeros(T, dtype=np.float64)
+            p_grid = p_grid_import - p_grid_export
+
+        if unserved_load is None:
+            unserved_load = np.zeros(T, dtype=np.float64)
+        if excess_generation is None:
+            excess_generation = np.zeros(T, dtype=np.float64)
+
+        if soc_trajectory is None:
+            soc_trajectory = np.full(T + 1, self.soc_init, dtype=np.float64)
 
         # 1. Solar generation bounds: 0 <= P_solar <= P_solar_avail
         solar_lower_viol = float(np.sum(np.maximum(0.0, -p_solar)))
@@ -78,19 +107,29 @@ class MicrogridConstraints:
         terminal_soc_error = float(abs(soc_trajectory[-1] - self.terminal_soc_target))
         terminal_soc_valid = bool(terminal_soc_error <= (self.terminal_soc_tolerance + 1e-5))
 
-        # 6. Grid power limits: -P_export_max <= P_grid <= P_grid_max
-        min_grid = -self.p_export_max if self.p_export_max > 0 else 0.0
-        grid_import_viol = float(np.sum(np.maximum(0.0, p_grid - self.p_grid_max)))
-        grid_export_viol = float(np.sum(np.maximum(0.0, min_grid - p_grid)))
-        grid_valid = bool(grid_import_viol < 1e-4 and grid_export_viol < 1e-4)
+        # 6. Grid power limits: P_import <= max_import_power_kw, P_export <= max_export_power_kw
+        grid_import_viol = float(np.sum(np.maximum(0.0, p_grid_import - self.p_grid_max)))
+        grid_export_viol = float(np.sum(np.maximum(0.0, p_grid_export - self.p_export_max)))
+        grid_import_valid = bool(grid_import_viol < 1e-4)
+        grid_export_valid = bool(grid_export_viol < 1e-4)
+        grid_valid = bool(grid_import_valid and grid_export_valid)
 
-        # 7. Power Balance: P_solar + P_wind + P_battery + P_grid = P_load
-        pb_mismatch = np.abs(p_solar + p_wind + p_battery + p_grid - p_load)
-        pb_max_mismatch = float(np.max(pb_mismatch))
-        pb_total_mismatch = float(np.sum(pb_mismatch))
-        power_balance_valid = bool(pb_max_mismatch < 1e-3)
+        # 7. Power Balance Identity at every time step:
+        # P_solar + P_wind + P_battery + P_grid_import - P_grid_export + P_unserved - P_excess = P_load
+        pb_identity_residual = np.abs(
+            p_solar + p_wind + p_battery + p_grid_import - p_grid_export + unserved_load - excess_generation - p_load
+        )
+        pb_max_identity_residual = float(np.max(pb_identity_residual))
+        pb_total_identity_residual = float(np.sum(pb_identity_residual))
+        power_balance_identity_valid = bool(pb_max_identity_residual < 1e-3)
 
-        # Overall Feasibility: All independent criteria must be strictly satisfied
+        # 8. Unserved load & excess generation independent feasibility checks
+        unserved_load_total = float(np.sum(unserved_load))
+        excess_gen_total = float(np.sum(excess_generation))
+        unserved_load_valid = bool(unserved_load_total < 1e-3)
+        excess_generation_valid = bool(excess_gen_total < 1e-3)
+
+        # Overall Feasibility: All independent criteria must be satisfied
         is_feasible = bool(
             solar_valid and
             wind_valid and
@@ -98,8 +137,11 @@ class MicrogridConstraints:
             soc_bounds_valid and
             initial_soc_valid and
             terminal_soc_valid and
-            grid_valid and
-            power_balance_valid
+            grid_import_valid and
+            grid_export_valid and
+            power_balance_identity_valid and
+            unserved_load_valid and
+            excess_generation_valid
         )
 
         total_violation = float(
@@ -107,9 +149,12 @@ class MicrogridConstraints:
             wind_lower_viol + wind_upper_viol +
             charge_viol + discharge_viol +
             (soc_min_viol + soc_max_viol) * 100.0 +
+            initial_soc_viol * 100.0 +
             terminal_soc_error * 100.0 +
             grid_import_viol + grid_export_viol +
-            pb_total_mismatch
+            pb_total_identity_residual +
+            unserved_load_total * 10.0 +
+            excess_gen_total * 5.0
         )
 
         return {
@@ -132,11 +177,17 @@ class MicrogridConstraints:
             "terminal_soc_valid": terminal_soc_valid,
             "terminal_soc_error": terminal_soc_error,
             "grid_valid": grid_valid,
+            "grid_import_valid": grid_import_valid,
+            "grid_export_valid": grid_export_valid,
             "grid_import_violation": grid_import_viol,
             "grid_export_violation": grid_export_viol,
-            "power_balance_valid": power_balance_valid,
-            "power_balance_max_mismatch": pb_max_mismatch,
-            "power_balance_total_mismatch": pb_total_mismatch
+            "power_balance_valid": power_balance_identity_valid,
+            "power_balance_max_mismatch": pb_max_identity_residual,
+            "power_balance_total_mismatch": pb_total_identity_residual,
+            "unserved_load_valid": unserved_load_valid,
+            "unserved_load_total_kw": unserved_load_total,
+            "excess_generation_valid": excess_generation_valid,
+            "excess_generation_total_kw": excess_gen_total
         }
 
     def _simulate_battery_forward(

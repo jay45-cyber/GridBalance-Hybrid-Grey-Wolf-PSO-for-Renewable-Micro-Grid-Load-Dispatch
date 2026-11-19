@@ -3,7 +3,7 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Dataset: DDRE-33](https://img.shields.io/badge/Dataset-DDRE--33%20(Nature%20Sci%20Data)-green.svg)](https://doi.org/10.6084/m9.figshare.29374640)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 17 Passed](https://img.shields.io/badge/tests-17%20passed-brightgreen.svg)](tests/)
+[![Tests: 28 Passed](https://img.shields.io/badge/tests-28%20passed-brightgreen.svg)](tests/)
 
 **GridBalance** is a research-grade renewable microgrid optimal economic load dispatch framework implemented in Python. It integrates authentic high-resolution distributed solar PV and wind generation scenarios from the **DDRE-33** dataset (mapped to the standard **IEEE 33-bus distribution feeder**) and introduces a synergistic **Hybrid Grey Wolf–Particle Swarm Optimization (Hybrid GWO-PSO)** dispatch algorithm.
 
@@ -93,24 +93,27 @@ where:
 - $C_{emission}(t) = \kappa_{CO2} \cdot \gamma_{emission} \cdot \max(0, P_{grid}(t))$ (Carbon tax)
 
 ### 3.2 Physical Constraints & Standardized Metrics
-1. **Power Balance Equality**:
-   $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid}(t) + P_{unserved}(t) - P_{excess}(t) = P_{load}(t), \quad \forall t$$
-   where $P_{unserved}(t) \ge 0$ (unserved load) and $P_{excess}(t) \ge 0$ (excess generation) prevent silent clipping.
+1. **Power Balance Identity (Evaluated Hourly)**:
+   $$P_{solar}(t) + P_{wind}(t) + P_{battery}(t) + P_{grid, import}(t) - P_{grid, export}(t) + P_{unserved}(t) - P_{excess}(t) = P_{load}(t), \quad \forall t$$
+   where $P_{unserved}(t) \ge 0$ (unserved load) and $P_{excess}(t) \ge 0$ (excess generation) are tracked independently to eliminate silent clipping.
 2. **Generation Limits**:
    $$0 \le P_{solar}(t) \le P_{solar, avail}(t), \quad 0 \le P_{wind}(t) \le P_{wind, avail}(t)$$
-3. **Main Grid Capacity Limits**:
-   $$-P_{grid, export, max} \le P_{grid}(t) \le P_{grid, import, max}$$
-4. **BESS Dynamic State of Charge (SOC)**:
+3. **Independent Grid Capacity Limits**:
+   $$0 \le P_{grid, import}(t) \le P_{grid, import, max} \quad (2,500\text{ kW})$$
+   $$0 \le P_{grid, export}(t) \le P_{grid, export, max} \quad (1,000\text{ kW})$$
+4. **BESS Dynamic State of Charge (SOC) Trajectory**:
    $$\text{SOC}(t) = \text{SOC}(t-1)(1 - \sigma_{sd}\Delta t) - \frac{P_{battery}(t) \Delta t}{E_{bat}} \cdot \begin{cases} \frac{1}{\eta_{dis}}, & P_{battery}(t) \ge 0 \text{ (discharge)} \\ \eta_{ch}, & P_{battery}(t) < 0 \text{ (charge)} \end{cases}$$
-   $$\text{SOC}_{min} \le \text{SOC}(t) \le \text{SOC}_{max}, \quad \forall t$$
+   $$\text{SOC}_{min} \le \text{SOC}(t) \le \text{SOC}_{max}, \quad \forall t \in \{0, \dots, T\}$$
+   with $\text{SOC}_{min} = 0.20, \quad \text{SOC}_{max} = 0.90, \quad \text{SOC}_{init} = 0.50$.
 5. **Cyclic Terminal SOC Constraint**:
-   $$|\text{SOC}(T) - \text{SOC}_{init}| \le 0.01$$
+   $$|\text{SOC}(T) - \text{SOC}_{init}| \le \epsilon_{term} \quad (\epsilon_{term} = 0.01)$$
    guarantees zero unphysical energy borrowing over the daily scheduling cycle.
-6. **Standardized Clean Energy Metrics**:
+6. **Standardized Clean Energy Metrics & Attribution**:
    - **Metric A (RE Utilization)**: $\frac{\sum (P_{solar} + P_{wind})}{\sum (P_{solar, avail} + P_{wind, avail})} \times 100$
-   - **Metric B (RE Share of Demand)**: $\frac{\sum \min(P_{load}, P_{solar} + P_{wind})}{\sum P_{load}} \times 100$
-   - **Metric C (Grid Dependency)**: $\frac{\sum \max(0, P_{grid})}{\sum P_{load}} \times 100$
+   - **Metric B (RE Share of Demand)**: $\frac{\sum P_{re \to demand} + \sum P_{re, dis \to demand}}{\sum P_{load} - P_{unserved}} \times 100$
+   - **Metric C (Grid Dependency)**: $\frac{\sum P_{grid, import}}{\sum P_{load} - P_{unserved}} \times 100$
    - **Metric D (Curtailment)**: $\frac{\sum P_{curt}}{\sum (P_{solar, avail} + P_{wind, avail})} \times 100$ (with $\text{Metric A} + \text{Metric D} \equiv 100\%$)
+   - *Attribution Note*: Battery discharge is attributed based on dynamic stored clean fraction $f_{re}(t)$ without double-counting.
 
 ---
 
@@ -139,13 +142,12 @@ Benchmarked on identical DDRE-33 Scenario Day 15, population size $N=30$, and it
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **PSO** | **\$3,114.81** | \$3,197.39 | \$82.47 | \$3,386.76 | 3.65s | **100.0%** | 0.0091 |
 | **Hybrid GWO-PSO** | \$3,215.63 | **\$3,256.51** | **\$45.09** | **\$3,377.57** | **3.41s** | **100.0%** | **0.0068** |
-| **GA** | \$3,215.79 | \$3,269.52 | \$35.33 | \$3,340.97 | 3.36s | **100.0%** | 0.0063 |
+| **GA** | \$3,215.79 | \$3,269.52 | **\$35.33** | **\$3,340.97** | 3.36s | **100.0%** | 0.0063 |
 | **GWO** | \$3,271.60 | \$3,354.19 | \$70.41 | \$3,510.54 | 3.38s | **100.0%** | 0.0078 |
 
-*Statistical Significance*:
-- **Hybrid GWO-PSO vs. GWO**: Welch's $t = -3.505$ ($p = 0.0031$), Mann-Whitney $U = 9.0$ ($p = 0.0022$). Hybrid significantly outperforms GWO ($p < 0.01$).
-- **Hybrid GWO-PSO vs. GA**: Hybrid achieves both lower best cost (\$3,215.63 vs \$3,215.79) and lower mean operating cost (\$3,256.51 vs \$3,269.52).
-- **Hybrid GWO-PSO vs. PSO**: Hybrid reduces standard deviation by 45.3% ($\sigma = \$45.09$ vs $\$82.47$) and achieves a superior worst-case cost (\$3,377.57 vs \$3,386.76).
+*Statistical Significance & Engineering Trade-offs*:
+- **Statistical Superiority over GWO**: Hybrid GWO-PSO demonstrates a statistically significant improvement over standalone GWO (Welch's $t = -3.505, p = 0.0031$; Mann-Whitney $U = 9.0, p = 0.0022$), saving an average of \$97.68/day.
+- **Stability Comparison**: Standalone PSO achieved the lowest mean cost (\$3,197.39) on this active power problem, but exhibited high variance across seeds ($\sigma = \$82.47$), with its worst seed performing worse than the Hybrid's worst seed (\$3,386.76 vs \$3,377.57). Hybrid GWO-PSO reduced dispersion by 45.3% ($\sigma = \$45.09$). GA showed the lowest variance ($\sigma = \$35.33$).
 - **Feasibility**: 100.0% feasibility achieved across all 40 runs ($P_{unserved} = 0.00\text{ kWh}$, $P_{excess} = 0.00\text{ kWh}$).
 
 ---

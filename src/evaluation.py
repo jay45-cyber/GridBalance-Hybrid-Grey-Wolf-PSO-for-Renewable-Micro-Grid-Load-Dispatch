@@ -45,7 +45,9 @@ class ExperimentEvaluator:
         re_curts = np.array([r["best_details"].get("re_curtailment_pct", 0.0) for r in results])
         curtailments_kwh = np.array([r["best_details"].get("curtailment_kwh", 0.0) for r in results])
         grid_imports_kwh = np.array([r["best_details"].get("grid_import_kwh", 0.0) for r in results])
+        grid_exports_kwh = np.array([r["best_details"].get("grid_export_kwh", 0.0) for r in results])
         unserved_kwh = np.array([r["best_details"].get("unserved_load_kwh", 0.0) for r in results])
+        excess_kwh = np.array([r["best_details"].get("excess_generation_kwh", 0.0) for r in results])
         terminal_soc_errs = np.array([r["best_details"].get("terminal_soc_error", 0.0) for r in results])
         
         # Battery throughput
@@ -89,7 +91,9 @@ class ExperimentEvaluator:
             "re_curtailment_pct": float(np.mean(re_curts)),
             "mean_curtailment_kwh": float(np.mean(curtailments_kwh)),
             "mean_grid_import_kwh": float(np.mean(grid_imports_kwh)),
+            "mean_grid_export_kwh": float(np.mean(grid_exports_kwh)),
             "mean_unserved_load_kwh": float(np.mean(unserved_kwh)),
+            "mean_excess_generation_kwh": float(np.mean(excess_kwh)),
             "mean_terminal_soc_error": float(np.mean(terminal_soc_errs)),
             "mean_battery_throughput_kwh": float(np.mean(bat_throughputs)),
             "feasibility_rate_pct": float(np.mean(feasibilities) * 100.0)
@@ -146,7 +150,9 @@ class ExperimentEvaluator:
                     "re_curtailment_pct": d.get("re_curtailment_pct", 0.0),
                     "curtailment_kwh": d.get("curtailment_kwh", 0.0),
                     "grid_import_kwh": d.get("grid_import_kwh", 0.0),
+                    "grid_export_kwh": d.get("grid_export_kwh", 0.0),
                     "unserved_load_kwh": d.get("unserved_load_kwh", 0.0),
+                    "excess_generation_kwh": d.get("excess_generation_kwh", 0.0),
                     "terminal_soc_error": d.get("terminal_soc_error", 0.0),
                     "battery_throughput_kwh": float(np.sum(np.abs(p_bat)))
                 })
